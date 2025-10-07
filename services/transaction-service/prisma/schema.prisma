@@ -1,0 +1,198 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Enums
+enum InvoiceStatus {
+  PENDING
+  PAID
+  EXPIRED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  IN_FLIGHT
+  SUCCEEDED
+  FAILED
+}
+
+enum TransactionType {
+  SEND_MONEY
+  BUY_AIRTIME
+  PAYBILL
+  BUY_GOODS
+  SCAN_PAY
+}
+
+enum TransactionStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+  REFUNDED
+  LIGHTNING_PENDING
+  LIGHTNING_PAID
+  CONVERTING
+  MPESA_PENDING
+  REFUNDING
+}
+
+enum MpesaType {
+  B2C
+  AIRTIME
+  PAYBILL
+  TILL
+}
+
+enum MpesaStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+// Main Transaction model (no user context)
+model Transaction {
+  id                    String                @id @default(uuid())
+  paymentHash           String                @unique
+  transactionType       TransactionType
+  status                TransactionStatus
+  
+  // Amounts
+  btcAmount             Decimal               @db.Decimal(18, 8)
+  kesAmount             Decimal               @db.Decimal(18, 2)
+  exchangeRate          Decimal               @db.Decimal(18, 8)
+  feeAmount             Decimal               @db.Decimal(18, 2)
+  totalKesAmount        Decimal               @db.Decimal(18, 2)
+  
+  // M-Pesa Details
+  recipientPhone        String
+  recipientName         String?
+  merchantCode          String?               // Paybill/Till number
+  accountNumber         String?               // Paybill account
+  referenceNumber       String?
+  
+  // Metadata
+  ipAddress             String?
+  userAgent             String?
+  deviceInfo            Json?
+  
+  // Timestamps
+  invoiceExpiresAt      DateTime
+  paidAt                DateTime?
+  completedAt           DateTime?
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+  
+  // Relations
+  lightningInvoice      LightningInvoice?
+  mpesaTransaction      MpesaTransaction[]
+  
+  @@index([paymentHash])
+  @@index([status])
+  @@index([createdAt])
+  @@index([recipientPhone])
+  @@map("transactions")
+}
+
+// Lightning Invoice model
+model LightningInvoice {
+  id                  String              @id @default(uuid())
+  paymentHash         String              @unique
+  paymentRequest      String              @unique
+  amountSats          BigInt
+  amountKes           Decimal             @db.Decimal(18, 2)
+  description         String?
+  status              InvoiceStatus       @default(PENDING)
+  expiresAt           DateTime
+  paidAt              DateTime?
+  preimage            String?
+  
+  transactionId       String              @unique
+  transaction         Transaction         @relation(fields: [transactionId], references: [id])
+  
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  
+  @@index([paymentHash])
+  @@index([status])
+  @@index([expiresAt])
+  @@map("lightning_invoices")
+}
+
+// Lightning Payment model
+model LightningPayment {
+  id             String        @id @default(uuid())
+  paymentHash    String
+  paymentRequest String        @db.Text
+  amountSats     BigInt
+  feeSats        BigInt
+  status         PaymentStatus @default(PENDING)
+  failureReason  String?
+  settledAt      DateTime?
+  transactionId  String?       @unique
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([status])
+  @@index([paymentHash])
+  @@map("lightning_payments")
+}
+
+// M-Pesa Transaction model
+model MpesaTransaction {
+  id                    String              @id @default(uuid())
+  transactionId         String
+  transaction           Transaction         @relation(fields: [transactionId], references: [id])
+  
+  mpesaType             MpesaType
+  merchantRequestId     String?
+  checkoutRequestId     String?
+  mpesaReceiptNumber    String?             @unique
+  
+  phoneNumber           String
+  amount                Decimal             @db.Decimal(18, 2)
+  businessShortCode     String?
+  accountReference      String?
+  
+  status                MpesaStatus         @default(PENDING)
+  resultCode            Int?
+  resultDesc            String?
+  
+  callbackData          Json?
+  requestData           Json?
+  
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  
+  @@index([transactionId])
+  @@index([mpesaReceiptNumber])
+  @@index([phoneNumber])
+  @@map("mpesa_transactions")
+}
+
+// Exchange Rate model
+model ExchangeRate {
+  id            String    @id @default(uuid())
+  fromCurrency  String    // BTC
+  toCurrency    String    // KES
+  rate          Decimal   @db.Decimal(18, 8)
+  source        String    // binance, coinbase, etc
+  spread        Decimal   @db.Decimal(18, 8)
+  finalRate     Decimal   @db.Decimal(18, 8)
+  validFrom     DateTime
+  validUntil    DateTime
+  createdAt     DateTime  @default(now())
+  
+  @@index([fromCurrency, toCurrency])
+  @@index([validFrom, validUntil])
+  @@map("exchange_rates")
+}

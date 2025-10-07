@@ -1,0 +1,289 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: bitpesa-postgres
+    environment:
+      POSTGRES_DB: bitpesa
+      POSTGRES_USER: bitpesa_user
+      POSTGRES_PASSWORD: bitpesa_password
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    networks:
+      - bitpesa-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bitpesa_user -d bitpesa"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: bitpesa-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - bitpesa-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MongoDB for logs and analytics
+  mongodb:
+    image: mongo:7
+    container_name: bitpesa-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: bitpesa_admin
+      MONGO_INITDB_ROOT_PASSWORD: bitpesa_password
+      MONGO_INITDB_DATABASE: bitpesa_logs
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - bitpesa-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # pgAdmin for database management
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: bitpesa-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@bitpesa.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - bitpesa-network
+    depends_on:
+      - postgres
+
+  # Redis Commander for Redis management
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: bitpesa-redis-commander
+    environment:
+      REDIS_HOSTS: local:redis:6379
+    ports:
+      - "8081:8081"
+    networks:
+      - bitpesa-network
+    depends_on:
+      - redis
+
+  # Lightning Network Daemon (LND) - Testnet
+  lnd:
+    image: lightninglabs/lnd:v0.17.0-beta
+    container_name: bitpesa-lnd
+    command:
+      - lnd
+      - --bitcoin.active
+      - --bitcoin.testnet
+      - --bitcoin.node=bitcoind
+      - --bitcoind.rpchost=bitcoind:18332
+      - --bitcoind.rpcuser=bitcoin
+      - --bitcoind.rpcpass=bitcoin
+      - --bitcoind.zmqpubrawblock=tcp://bitcoind:28332
+      - --bitcoind.zmqpubrawtx=tcp://bitcoind:28333
+      - --rpclisten=0.0.0.0:10009
+      - --restlisten=0.0.0.0:8080
+      - --listen=0.0.0.0:9735
+      - --debuglevel=info
+      - --accept-keysend
+      - --accept-amp
+    ports:
+      - "10009:10009"  # gRPC
+      - "8080:8080"    # REST
+      - "9735:9735"    # P2P
+    volumes:
+      - lnd_data:/root/.lnd
+    networks:
+      - bitpesa-network
+    depends_on:
+      - bitcoind
+    healthcheck:
+      test: ["CMD", "lncli", "--network=testnet", "getinfo"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Bitcoin Core (Testnet)
+  bitcoind:
+    image: ruimarinho/bitcoin-core:25.0
+    container_name: bitpesa-bitcoind
+    command:
+      - bitcoind
+      - -server
+      - -rpcbind=0.0.0.0
+      - -rpcallowip=0.0.0.0/0
+      - -rpcuser=bitcoin
+      - -rpcpassword=bitcoin
+      - -testnet
+      - -txindex
+      - -zmqpubrawblock=tcp://0.0.0.0:28332
+      - -zmqpubrawtx=tcp://0.0.0.0:28333
+      - -fallbackfee=0.0002
+    ports:
+      - "18332:18332"  # RPC
+      - "18333:18333"  # P2P
+      - "28332:28332"  # ZMQ raw block
+      - "28333:28333"  # ZMQ raw tx
+    volumes:
+      - bitcoind_data:/home/bitcoin/.bitcoin
+    networks:
+      - bitpesa-network
+    healthcheck:
+      test: ["CMD", "bitcoin-cli", "-testnet", "getblockchaininfo"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # RabbitMQ Message Queue
+  rabbitmq:
+    image: rabbitmq:3.12-management
+    container_name: bitpesa-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: bitpesa
+      RABBITMQ_DEFAULT_PASS: bitpesa_password
+    ports:
+      - "5672:5672"    # AMQP
+      - "15672:15672"  # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - bitpesa-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Prometheus for metrics
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: bitpesa-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - bitpesa-network
+
+  # Grafana for dashboards
+  grafana:
+    image: grafana/grafana:latest
+    container_name: bitpesa-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin123
+      GF_USERS_ALLOW_SIGN_UP: false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    networks:
+      - bitpesa-network
+    depends_on:
+      - prometheus
+
+  # API Gateway
+  api-gateway:
+    build:
+      context: ../../services/api-gateway
+      dockerfile: Dockerfile
+    container_name: bitpesa-api-gateway
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      LIGHTNING_SERVICE_URL: http://lightning-service:3001
+      MPESA_SERVICE_URL: http://mpesa-service:3002
+      TRANSACTION_SERVICE_URL: http://transaction-service:3003
+      CONVERSION_SERVICE_URL: http://conversion-service:3004
+      RECEIPT_SERVICE_URL: http://receipt-service:3005
+      RATE_LIMIT_SERVICE_URL: http://rate-limit-service:3006
+      ALLOWED_ORIGINS: http://localhost:3000,http://localhost:3001,https://bitpesa.com
+    networks:
+      - bitpesa-network
+    depends_on:
+      - postgres
+      - redis
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Kong API Gateway
+  kong:
+    image: kong:3.4
+    container_name: bitpesa-kong
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /kong/kong.yml
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_LISTEN: 0.0.0.0:8001
+      KONG_PROXY_LISTEN: 0.0.0.0:8000
+      KONG_ADMIN_GUI_LISTEN: 0.0.0.0:8002
+      KONG_ADMIN_GUI_URL: http://localhost:8002
+    ports:
+      - "8000:8000"  # Proxy
+      - "8001:8001"  # Admin API
+      - "8002:8002"  # Kong Manager
+    volumes:
+      - ./kong/kong.yml:/kong/kong.yml
+      - ./kong/plugins:/kong/plugins
+    networks:
+      - bitpesa-network
+    depends_on:
+      - api-gateway
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  redis_data:
+  mongodb_data:
+  pgadmin_data:
+  lnd_data:
+  bitcoind_data:
+  rabbitmq_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  bitpesa-network:
+    driver: bridge

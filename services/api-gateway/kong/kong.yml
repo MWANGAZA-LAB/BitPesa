@@ -1,0 +1,243 @@
+_format_version: "3.0"
+
+services:
+  # API Gateway Service
+  - name: api-gateway
+    url: http://api-gateway:3000
+    routes:
+      - name: api-gateway-route
+        paths:
+          - /api/v1
+        methods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+        strip_path: false
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 100
+          hour: 1000
+          policy: local
+      - name: request-size-limiting
+        config:
+          allowed_payload_size: 10
+      - name: cors
+        config:
+          origins:
+            - "http://localhost:3000"
+            - "http://localhost:3001"
+            - "https://bitpesa.com"
+          methods:
+            - GET
+            - POST
+            - PUT
+            - DELETE
+            - OPTIONS
+          headers:
+            - Accept
+            - Accept-Version
+            - Content-Length
+            - Content-MD5
+            - Content-Type
+            - Date
+            - X-Auth-Token
+            - X-API-Key
+          exposed_headers:
+            - X-Auth-Token
+          credentials: true
+          max_age: 3600
+      - name: security-headers
+        config:
+          x_frame_options: DENY
+          x_content_type_options: nosniff
+          x_xss_protection: "1; mode=block"
+          strict_transport_security: "max-age=31536000; includeSubDomains"
+          content_security_policy: "default-src 'self'"
+
+  # Lightning Service
+  - name: lightning-service
+    url: http://lightning-service:3001
+    routes:
+      - name: lightning-route
+        paths:
+          - /lightning
+        methods:
+          - GET
+          - POST
+        strip_path: true
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 20
+          hour: 200
+          policy: local
+      - name: request-transformer
+        config:
+          add:
+            headers:
+              - "X-Service: lightning"
+      - name: response-transformer
+        config:
+          add:
+            headers:
+              - "X-Response-Time: $(latency_ms)"
+
+  # M-Pesa Service
+  - name: mpesa-service
+    url: http://mpesa-service:3002
+    routes:
+      - name: mpesa-route
+        paths:
+          - /mpesa
+        methods:
+          - GET
+          - POST
+        strip_path: true
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 10
+          hour: 100
+          policy: local
+      - name: request-transformer
+        config:
+          add:
+            headers:
+              - "X-Service: mpesa"
+      - name: response-transformer
+        config:
+          add:
+            headers:
+              - "X-Response-Time: $(latency_ms)"
+
+  # Transaction Service
+  - name: transaction-service
+    url: http://transaction-service:3003
+    routes:
+      - name: transaction-route
+        paths:
+          - /transactions
+        methods:
+          - GET
+          - POST
+          - PUT
+        strip_path: true
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 30
+          hour: 300
+          policy: local
+      - name: request-transformer
+        config:
+          add:
+            headers:
+              - "X-Service: transaction"
+      - name: response-transformer
+        config:
+          add:
+            headers:
+              - "X-Response-Time: $(latency_ms)"
+
+  # Conversion Service
+  - name: conversion-service
+    url: http://conversion-service:3004
+    routes:
+      - name: conversion-route
+        paths:
+          - /conversion
+        methods:
+          - GET
+          - POST
+        strip_path: true
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 60
+          hour: 600
+          policy: local
+      - name: request-transformer
+        config:
+          add:
+            headers:
+              - "X-Service: conversion"
+      - name: response-transformer
+        config:
+          add:
+            headers:
+              - "X-Response-Time: $(latency_ms)"
+
+  # Receipt Service
+  - name: receipt-service
+    url: http://receipt-service:3005
+    routes:
+      - name: receipt-route
+        paths:
+          - /receipts
+        methods:
+          - GET
+          - POST
+        strip_path: true
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 30
+          hour: 300
+          policy: local
+      - name: request-transformer
+        config:
+          add:
+            headers:
+              - "X-Service: receipt"
+      - name: response-transformer
+        config:
+          add:
+            headers:
+              - "X-Response-Time: $(latency_ms)"
+
+  # Rate Limit Service
+  - name: rate-limit-service
+    url: http://rate-limit-service:3006
+    routes:
+      - name: rate-limit-route
+        paths:
+          - /rate-limit
+        methods:
+          - GET
+          - POST
+        strip_path: true
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 100
+          hour: 1000
+          policy: local
+      - name: request-transformer
+        config:
+          add:
+            headers:
+              - "X-Service: rate-limit"
+      - name: response-transformer
+        config:
+          add:
+            headers:
+              - "X-Response-Time: $(latency_ms)"
+
+# Global plugins
+plugins:
+  - name: prometheus
+    config:
+      per_consumer: true
+      status_code_metrics: true
+      latency_metrics: true
+      bandwidth_metrics: true
+      upstream_health_metrics: true
+  - name: zipkin
+    config:
+      http_endpoint: http://zipkin:9411/api/v2/spans
+      sample_ratio: 0.1
+      traceid_byte_length: 16
+      header_type: preserve
+      default_header_type: w3c
