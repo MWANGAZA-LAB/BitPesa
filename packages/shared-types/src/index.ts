@@ -4,3 +4,4 @@ export * from './lightning.types';
 export * from './mpesa.types';
 export * from './wallet.types';
 export * from './common.types';
+export * from './compliance.types';

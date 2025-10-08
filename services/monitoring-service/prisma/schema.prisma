@@ -1,0 +1,134 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AlertSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ServiceStatus {
+  HEALTHY
+  UNHEALTHY
+  DEGRADED
+}
+
+// System metrics storage
+model SystemMetrics {
+  id          String   @id @default(uuid())
+  timestamp   DateTime @default(now())
+  services    Json
+  transactions Json
+  performance Json
+  security    Json
+  createdAt   DateTime @default(now())
+
+  @@map("system_metrics")
+  @@index([timestamp])
+}
+
+// Alert management
+model Alert {
+  id          String        @id @default(uuid())
+  ruleId      String
+  ruleName    String
+  severity    AlertSeverity
+  message     String
+  metrics     Json?
+  resolved    Boolean       @default(false)
+  resolvedAt  DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@map("alerts")
+  @@index([ruleId])
+  @@index([severity])
+  @@index([resolved])
+  @@index([createdAt])
+}
+
+// Service health tracking
+model ServiceHealth {
+  id           String        @id @default(uuid())
+  serviceName  String
+  status       ServiceStatus
+  responseTime Float
+  uptime       Float
+  errorRate    Float
+  lastChecked  DateTime      @default(now())
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@map("service_health")
+  @@index([serviceName])
+  @@index([status])
+  @@index([lastChecked])
+}
+
+// Performance metrics
+model PerformanceMetrics {
+  id                  String   @id @default(uuid())
+  serviceName         String
+  cpuUsage            Float
+  memoryUsage         Float
+  diskUsage           Float
+  databaseConnections Int
+  cacheHitRate        Float
+  timestamp           DateTime @default(now())
+
+  @@map("performance_metrics")
+  @@index([serviceName])
+  @@index([timestamp])
+}
+
+// Transaction metrics
+model TransactionMetrics {
+  id            String   @id @default(uuid())
+  total         Int
+  pending       Int
+  completed     Int
+  failed        Int
+  totalVolume   Float
+  averageAmount Float
+  timestamp     DateTime @default(now())
+
+  @@map("transaction_metrics")
+  @@index([timestamp])
+}
+
+// Security metrics
+model SecurityMetrics {
+  id                  String   @id @default(uuid())
+  failedLogins        Int
+  blockedRequests     Int
+  suspiciousActivities Int
+  rateLimitHits       Int
+  timestamp           DateTime @default(now())
+
+  @@map("security_metrics")
+  @@index([timestamp])
+}
+
+// Audit logs for monitoring
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  action    String
+  resource  String
+  details   Json?
+  ipAddress String?
+  userAgent String?
+  timestamp DateTime @default(now())
+
+  @@map("audit_logs")
+  @@index([userId])
+  @@index([action])
+  @@index([timestamp])
+}

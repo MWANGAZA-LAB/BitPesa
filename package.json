@@ -12,6 +12,9 @@
     "dev": "turbo run dev",
     "build": "turbo run build",
     "test": "turbo run test",
+    "test:integration": "turbo run test:integration",
+    "test:performance": "turbo run test:performance",
+    "test:cov": "turbo run test:cov",
     "lint": "turbo run lint",
     "type-check": "turbo run type-check",
     "clean": "turbo run clean",
@@ -20,7 +23,12 @@
     "prisma:studio": "turbo run prisma:studio",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down",
-    "docker:logs": "docker-compose logs -f"
+    "docker:logs": "docker-compose logs -f",
+    "security:audit": "node scripts/security-audit.js",
+    "security:setup": "node scripts/setup-admin.js",
+    "compliance:report": "turbo run compliance:report",
+    "monitoring:health": "turbo run monitoring:health",
+    "production:check": "node scripts/production-readiness-check.js"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",

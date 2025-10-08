@@ -1,49 +1,60 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { SignJWT } from 'jose';
+import { verifyToken } from '@bitpesa/shared-utils';
 
-const ADMIN_CREDENTIALS = {
-  username: 'admin',
-  password: 'admin123', // In production, use environment variables and hashed passwords
-};
-
-const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || 'your-secret-key');
+// Validate JWT secret is configured
+if (!process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET environment variable is required');
+}
 
 export async function POST(request: NextRequest) {
   try {
-    const { username, password } = await request.json();
+    const { token } = await request.json();
 
-    // Validate credentials
-    if (username !== ADMIN_CREDENTIALS.username || password !== ADMIN_CREDENTIALS.password) {
+    if (!token) {
       return NextResponse.json(
         {
           success: false,
-          error: { message: 'Invalid credentials' },
+          error: { message: 'Token is required' },
+        },
+        { status: 400 }
+      );
+    }
+
+    // Verify token
+    const payload = await verifyToken(token);
+    if (!payload) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: { message: 'Invalid or expired token' },
         },
         { status: 401 }
       );
     }
 
-    // Create JWT token
-    const token = await new SignJWT({ 
-      username,
-      role: 'admin',
-      iat: Math.floor(Date.now() / 1000),
-    })
-      .setProtectedHeader({ alg: 'HS256' })
-      .setExpirationTime('24h')
-      .sign(JWT_SECRET);
+    // Check if user has admin role
+    if (payload.role !== 'admin') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: { message: 'Insufficient permissions' },
+        },
+        { status: 403 }
+      );
+    }
 
     return NextResponse.json({
       success: true,
       data: {
-        token,
         user: {
-          username,
-          role: 'admin',
+          id: payload.sub,
+          username: payload.username,
+          role: payload.role,
         },
       },
     });
   } catch (error) {
+    console.error('Admin auth error:', error);
     return NextResponse.json(
       {
         success: false,
