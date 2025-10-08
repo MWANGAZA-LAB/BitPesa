@@ -14,7 +14,7 @@ export enum ComplianceStatus {
   SUSPENDED = 'SUSPENDED',
 }
 
-export enum TransactionType {
+export enum ComplianceTransactionType {
   SEND_MONEY = 'SEND_MONEY',
   BUY_AIRTIME = 'BUY_AIRTIME',
   PAYBILL = 'PAYBILL',

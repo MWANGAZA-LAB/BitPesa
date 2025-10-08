@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { RiskLevel, TransactionType, ComplianceStatus } from '@bitpesa/shared-types';
+import { RiskLevel, ComplianceTransactionType, ComplianceStatus } from '@bitpesa/shared-types';
 
 export interface TransactionRiskAssessment {
   transactionId: string;
@@ -41,7 +41,7 @@ export class AMLService {
     id: string;
     amount: number;
     recipientPhone: string;
-    transactionType: TransactionType;
+    transactionType: ComplianceTransactionType;
     ipAddress?: string;
     userAgent?: string;
     deviceInfo?: any;
@@ -122,7 +122,7 @@ export class AMLService {
     id: string;
     amount: number;
     recipientPhone: string;
-    transactionType: TransactionType;
+    transactionType: ComplianceTransactionType;
     ipAddress?: string;
   }): Promise<{ score: number; factors: string[] }> {
     const factors: string[] = [];

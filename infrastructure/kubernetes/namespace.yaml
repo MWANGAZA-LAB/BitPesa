@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: bitpesa
+  labels:
+    name: bitpesa
+    app: bitpesa-bridge
