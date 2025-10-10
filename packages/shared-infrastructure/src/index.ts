@@ -11,6 +11,9 @@ export {
   RateLimitService 
 } from './resilience/resilience.service';
 
+// Module export
+export { SharedInfrastructureModule } from './shared-infrastructure.module';
+
 // Types
 export type { PrismaConfig } from './database/prisma.service';
 export type { RedisConfig, CacheOptions } from './cache/redis.service';
