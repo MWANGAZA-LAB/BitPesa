@@ -38,9 +38,6 @@ importers:
 
   apps/web:
     dependencies:
-      '@bitpesa/shared-config':
-        specifier: workspace:*
-        version: link:../../packages/shared-config
       '@bitpesa/shared-types':
         specifier: workspace:*
         version: link:../../packages/shared-types
@@ -286,13 +283,46 @@ importers:
       '@nestjs/common':
         specifier: ^10.2.0
         version: 10.4.20(class-transformer@0.5.1)(class-validator@0.14.2)(reflect-metadata@0.1.14)(rxjs@7.8.2)
+      '@nestjs/config':
+        specifier: ^3.0.0
+        version: 3.3.0(@nestjs/common@10.4.20)(rxjs@7.8.2)
       '@prisma/client':
         specifier: ^5.6.0
         version: 5.22.0(prisma@5.22.0)
+      redis:
+        specifier: ^4.6.0
+        version: 4.7.1
       winston:
         specifier: ^3.11.0
         version: 3.18.3
     devDependencies:
+      '@types/jest':
+        specifier: ^29.5.2
+        version: 29.5.14
+      '@types/node':
+        specifier: ^20.10.0
+        version: 20.19.20
+      '@typescript-eslint/eslint-plugin':
+        specifier: ^6.13.0
+        version: 6.21.0(@typescript-eslint/parser@6.21.0)(eslint@8.57.1)(typescript@5.9.3)
+      '@typescript-eslint/parser':
+        specifier: ^6.13.0
+        version: 6.21.0(eslint@8.57.1)(typescript@5.9.3)
+      eslint:
+        specifier: ^8.54.0
+        version: 8.57.1
+      eslint-config-prettier:
+        specifier: ^9.0.0
+        version: 9.1.2(eslint@8.57.1)
+      eslint-plugin-prettier:
+        specifier: ^5.0.1
+        version: 5.5.4(eslint-config-prettier@9.1.2)(eslint@8.57.1)(prettier@3.6.2)
+      jest:
+        specifier: ^29.5.0
+        version: 29.7.0(@types/node@20.19.20)(ts-node@10.9.2)
+      prettier:
+        specifier: ^3.1.0
+        version: 3.6.2
       typescript:
         specifier: ^5.3.0
         version: 5.9.3
@@ -790,9 +820,15 @@ importers:
       '@nestjs/platform-socket.io':
         specifier: ^10.0.0
         version: 10.4.20(@nestjs/common@10.4.20)(@nestjs/websockets@10.4.20)(rxjs@7.8.2)
+      '@nestjs/swagger':
+        specifier: ^7.0.0
+        version: 7.4.2(@nestjs/common@10.4.20)(@nestjs/core@10.4.20)(class-transformer@0.5.1)(class-validator@0.14.2)(reflect-metadata@0.1.14)
       '@nestjs/terminus':
         specifier: ^10.2.0
         version: 10.3.0(@nestjs/common@10.4.20)(@nestjs/core@10.4.20)(@prisma/client@5.22.0)(reflect-metadata@0.1.14)(rxjs@7.8.2)
+      '@nestjs/throttler':
+        specifier: ^5.0.0
+        version: 5.2.0(@nestjs/common@10.4.20)(@nestjs/core@10.4.20)(reflect-metadata@0.1.14)
       '@nestjs/websockets':
         specifier: ^10.0.0
         version: 10.4.20(@nestjs/common@10.4.20)(@nestjs/core@10.4.20)(@nestjs/platform-socket.io@10.4.20)(reflect-metadata@0.1.14)(rxjs@7.8.2)
