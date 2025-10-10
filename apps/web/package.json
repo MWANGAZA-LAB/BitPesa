@@ -82,6 +82,6 @@
     "eslint": "^9.0.0",
     "eslint-config-next": "^14.0.0",
     "@types/qrcode": "^1.5.0",
-    "@types/react-webcam": "^3.0.1"
+    "@types/react-webcam": "^3.0.0"
   }
 }
