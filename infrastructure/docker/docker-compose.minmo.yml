@@ -1,0 +1,215 @@
+# BitPesa Bridge - MinMo Architecture
+# Simplified Docker Compose Configuration
+
+version: '3.8'
+
+services:
+  # Database
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: bitpesa
+      POSTGRES_USER: bitpesa
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bitpesa"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bitpesa-network
+
+  # Cache & Message Queue
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bitpesa-network
+
+  # API Gateway
+  kong:
+    image: kong:3.4-alpine
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /kong/kong.yml
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_LISTEN: 0.0.0.0:8001
+      KONG_PROXY_LISTEN: 0.0.0.0:8000
+    ports:
+      - "8000:8000"
+      - "8001:8001"
+    volumes:
+      - ./kong/minmo-kong.yml:/kong/kong.yml
+    depends_on:
+      - transaction-service
+      - mpesa-service
+      - minmo-service
+      - notification-service
+      - receipt-service
+    networks:
+      - bitpesa-network
+
+  # Transaction Service (Main Orchestrator)
+  transaction-service:
+    build: 
+      context: ../../services/transaction-service
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql://bitpesa:${POSTGRES_PASSWORD}@postgres:5432/bitpesa
+      REDIS_URL: redis://redis:6379
+      MINMO_SERVICE_URL: http://minmo-service:3000
+      MPESA_SERVICE_URL: http://mpesa-service:3000
+      NOTIFICATION_SERVICE_URL: http://notification-service:3000
+      RECEIPT_SERVICE_URL: http://receipt-service:3000
+      NODE_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "3001:3000"
+    networks:
+      - bitpesa-network
+    restart: unless-stopped
+
+  # MinMo Service (Bitcoin Operations)
+  minmo-service:
+    build:
+      context: ../../services/minmo-service
+      dockerfile: Dockerfile
+    environment:
+      MINMO_API_URL: ${MINMO_API_URL}
+      MINMO_API_KEY: ${MINMO_API_KEY}
+      MINMO_WEBHOOK_SECRET: ${MINMO_WEBHOOK_SECRET}
+      API_BASE_URL: ${API_BASE_URL}
+      NODE_ENV: production
+    ports:
+      - "3003:3000"
+    networks:
+      - bitpesa-network
+    restart: unless-stopped
+
+  # M-Pesa Service (Safaricom Integration)
+  mpesa-service:
+    build:
+      context: ../../services/mpesa-service
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql://bitpesa:${POSTGRES_PASSWORD}@postgres:5432/bitpesa
+      DARAJA_CONSUMER_KEY: ${DARAJA_CONSUMER_KEY}
+      DARAJA_CONSUMER_SECRET: ${DARAJA_CONSUMER_SECRET}
+      DARAJA_BUSINESS_SHORT_CODE: ${DARAJA_BUSINESS_SHORT_CODE}
+      DARAJA_PASSKEY: ${DARAJA_PASSKEY}
+      DARAJA_CALLBACK_URL: ${DARAJA_CALLBACK_URL}
+      NODE_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3002:3000"
+    networks:
+      - bitpesa-network
+    restart: unless-stopped
+
+  # Notification Service (SMS/Email)
+  notification-service:
+    build:
+      context: ../../services/notification-service
+      dockerfile: Dockerfile
+    environment:
+      AFRICAS_TALKING_API_KEY: ${AFRICAS_TALKING_API_KEY}
+      AFRICAS_TALKING_USERNAME: ${AFRICAS_TALKING_USERNAME}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      NODE_ENV: production
+    ports:
+      - "3004:3000"
+    networks:
+      - bitpesa-network
+    restart: unless-stopped
+
+  # Receipt Service (PDF Generation)
+  receipt-service:
+    build:
+      context: ../../services/receipt-service
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql://bitpesa:${POSTGRES_PASSWORD}@postgres:5432/bitpesa
+      NODE_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3005:3000"
+    networks:
+      - bitpesa-network
+    restart: unless-stopped
+
+  # Web Application
+  web-app:
+    build:
+      context: ../../apps/web
+      dockerfile: Dockerfile
+    environment:
+      NEXT_PUBLIC_API_URL: ${API_BASE_URL}/api/v1
+      NEXT_PUBLIC_WEB_URL: ${WEB_BASE_URL}
+      NODE_ENV: production
+    ports:
+      - "3000:3000"
+    depends_on:
+      - kong
+    networks:
+      - bitpesa-network
+    restart: unless-stopped
+
+  # Monitoring (Optional)
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      - bitpesa-network
+    profiles:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - bitpesa-network
+    profiles:
+      - monitoring
+
+volumes:
+  postgres_data:
+  redis_data:
+  grafana_data:
+
+networks:
+  bitpesa-network:
+    driver: bridge

@@ -8,7 +8,13 @@ import { LoggerModule } from './logger/logger.module';
 import { TransactionModule } from './transaction/transaction.module';
 import { ConversionModule } from './conversion/conversion.module';
 import { NotificationModule } from './notification/notification.module';
-import { appConfigSchema, getAppConfig } from '@bitpesa/shared-config';
+import { 
+  appConfigSchema, 
+  getAppConfig, 
+  AppConfigService, 
+  ErrorHandlerService, 
+  RetryService 
+} from '@bitpesa/shared-config';
 
 @Module({
   imports: [
@@ -26,6 +32,10 @@ import { appConfigSchema, getAppConfig } from '@bitpesa/shared-config';
     NotificationModule,
   ],
   controllers: [HealthController],
-  providers: [],
+  providers: [
+    AppConfigService,
+    ErrorHandlerService,
+    RetryService,
+  ],
 })
 export class AppModule {}

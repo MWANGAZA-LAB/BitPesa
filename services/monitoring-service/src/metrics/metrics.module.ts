@@ -1,11 +1,10 @@
 import { Module } from '@nestjs/common';
 import { MetricsService } from './metrics.service';
 import { MetricsController } from './metrics.controller';
-import { PrismaModule } from '../prisma/prisma.module';
-import { LoggerModule } from '../logger/logger.module';
+import { SharedInfrastructureModule } from '@bitpesa/shared-infrastructure';
 
 @Module({
-  imports: [PrismaModule, LoggerModule],
+  imports: [SharedInfrastructureModule],
   providers: [MetricsService],
   controllers: [MetricsController],
   exports: [MetricsService],

@@ -1,8 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { MetricsModule } from './metrics/metrics.module';
-import { PrismaModule } from './prisma/prisma.module';
-import { LoggerModule } from './logger/logger.module';
+import { SharedInfrastructureModule } from '@bitpesa/shared-infrastructure';
 
 @Module({
   imports: [
@@ -10,8 +9,7 @@ import { LoggerModule } from './logger/logger.module';
       isGlobal: true,
       envFilePath: ['.env.local', '.env'],
     }),
-    PrismaModule,
-    LoggerModule,
+    SharedInfrastructureModule,
     MetricsModule,
   ],
 })

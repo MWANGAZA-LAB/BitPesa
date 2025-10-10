@@ -1,0 +1,214 @@
+# Kong Gateway Configuration for BitPesa MinMo Architecture
+# Simplified configuration without authentication
+
+_format_version: "3.0"
+
+services:
+  # Transaction Service - Main API
+  - name: transaction-service
+    url: http://transaction-service:3000
+    routes:
+      - name: transaction-routes
+        paths:
+          - /api/v1/transactions
+        methods:
+          - GET
+          - POST
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 60
+              hour: 1000
+              policy: redis
+              redis_host: redis
+              redis_port: 6379
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - GET
+                - POST
+                - OPTIONS
+              headers:
+                - Accept
+                - Accept-Version
+                - Content-Length
+                - Content-MD5
+                - Content-Type
+                - Date
+                - X-Requested-With
+          - name: request-transformer
+            config:
+              add:
+                headers:
+                  - "X-Forwarded-For:$(headers.x-forwarded-for)"
+                  - "X-Real-IP:$(headers.x-real-ip)"
+          - name: response-transformer
+            config:
+              add:
+                headers:
+                  - "X-Service:transaction-service"
+
+  # MinMo Service - Bitcoin Operations
+  - name: minmo-service
+    url: http://minmo-service:3000
+    routes:
+      - name: minmo-routes
+        paths:
+          - /api/v1/minmo
+        methods:
+          - GET
+          - POST
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 30
+              hour: 500
+              policy: redis
+              redis_host: redis
+              redis_port: 6379
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - GET
+                - POST
+                - OPTIONS
+          - name: request-transformer
+            config:
+              add:
+                headers:
+                  - "X-Service:minmo-service"
+
+  # M-Pesa Service - Webhooks Only
+  - name: mpesa-service
+    url: http://mpesa-service:3000
+    routes:
+      - name: mpesa-webhook-routes
+        paths:
+          - /api/v1/webhooks/mpesa
+        methods:
+          - POST
+        plugins:
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - POST
+                - OPTIONS
+          - name: request-transformer
+            config:
+              add:
+                headers:
+                  - "X-Service:mpesa-service"
+
+  # MinMo Service - Webhooks Only
+  - name: minmo-webhook-service
+    url: http://minmo-service:3000
+    routes:
+      - name: minmo-webhook-routes
+        paths:
+          - /api/v1/webhooks/minmo
+        methods:
+          - POST
+        plugins:
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - POST
+                - OPTIONS
+          - name: request-transformer
+            config:
+              add:
+                headers:
+                  - "X-Service:minmo-service"
+
+  # Receipt Service - Receipt Generation
+  - name: receipt-service
+    url: http://receipt-service:3000
+    routes:
+      - name: receipt-routes
+        paths:
+          - /api/v1/receipts
+        methods:
+          - GET
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 30
+              hour: 200
+              policy: redis
+              redis_host: redis
+              redis_port: 6379
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - GET
+                - OPTIONS
+
+  # Notification Service - SMS/Notifications
+  - name: notification-service
+    url: http://notification-service:3000
+    routes:
+      - name: notification-routes
+        paths:
+          - /api/v1/notifications
+        methods:
+          - POST
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 10
+              hour: 100
+              policy: redis
+              redis_host: redis
+              redis_port: 6379
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - POST
+                - OPTIONS
+
+  # Health Check Service
+  - name: health-service
+    url: http://transaction-service:3000
+    routes:
+      - name: health-routes
+        paths:
+          - /health
+          - /ready
+        methods:
+          - GET
+        plugins:
+          - name: cors
+            config:
+              origins:
+                - "*"
+              methods:
+                - GET
+                - OPTIONS
+
+# Global Plugins
+plugins:
+  - name: prometheus
+    config:
+      per_consumer: false
+      status_code_metrics: true
+      latency_metrics: true
+      bandwidth_metrics: true
+      upstream_health_metrics: true
+
+  - name: correlation-id
+    config:
+      header_name: "X-Correlation-ID"
+      generator: "uuid#counter"
+      echo_downstream: true

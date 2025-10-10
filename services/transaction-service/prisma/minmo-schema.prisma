@@ -1,0 +1,173 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Enums
+enum TransactionType {
+  SEND_MONEY
+  BUY_AIRTIME
+  PAYBILL
+  BUY_GOODS
+  SCAN_PAY
+}
+
+enum TransactionStatus {
+  PENDING                // Initial state
+  AWAITING_BTC_PAYMENT  // Waiting for user to send BTC
+  BTC_RECEIVED          // Minmo confirmed BTC
+  MPESA_PENDING         // Sending via M-Pesa
+  COMPLETED             // All done
+  FAILED                // Something went wrong
+  EXPIRED               // User didn't pay BTC in time
+  REFUNDED              // Money returned to user
+}
+
+enum MpesaType {
+  B2C              // Send money
+  AIRTIME          // Buy airtime
+  PAYBILL          // Pay bill
+  TILL             // Buy goods
+}
+
+enum MpesaStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+// Transaction Tracking (No Users!)
+model Transaction {
+  id                    String                @id @default(uuid())
+  
+  // Minmo Integration
+  minmoSwapId           String?               @unique
+  minmoAgentId          String?
+  btcAddress            String?               // Where user sends BTC
+  btcAmount             Decimal?              @db.Decimal(18, 8)
+  btcReceived           Boolean               @default(false)
+  
+  // Transaction Details
+  transactionType       TransactionType
+  status                TransactionStatus     @default(PENDING)
+  
+  // M-Pesa Details
+  recipientPhone        String
+  recipientName         String?
+  kesAmount             Decimal               @db.Decimal(18, 2)
+  merchantCode          String?               // For paybill/till
+  accountNumber         String?               // For paybill
+  referenceNumber       String?
+  
+  // Rates & Fees
+  exchangeRate          Decimal?              @db.Decimal(18, 8)
+  minmoFee              Decimal?              @db.Decimal(18, 2)
+  mpesaFee              Decimal?              @db.Decimal(18, 2)
+  totalFees             Decimal?              @db.Decimal(18, 2)
+  
+  // Metadata
+  ipAddress             String?
+  userAgent             String?
+  deviceInfo            Json?
+  
+  // Status Tracking
+  failureReason         String?
+  completedAt           DateTime?
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+  
+  // Relations
+  mpesaTransactions     MpesaTransaction[]
+  statusHistory         TransactionStatusHistory[]
+  
+  @@index([minmoSwapId])
+  @@index([recipientPhone])
+  @@index([status])
+  @@index([createdAt])
+  @@map("transactions")
+}
+
+// M-Pesa Transaction Records
+model MpesaTransaction {
+  id                    String              @id @default(uuid())
+  transactionId         String
+  transaction           Transaction         @relation(fields: [transactionId], references: [id])
+  
+  mpesaType             MpesaType
+  merchantRequestId     String?
+  checkoutRequestId     String?
+  mpesaReceiptNumber    String?             @unique
+  
+  phoneNumber           String
+  amount                Decimal             @db.Decimal(18, 2)
+  businessShortCode     String?
+  accountReference      String?
+  
+  status                MpesaStatus         @default(PENDING)
+  resultCode            Int?
+  resultDesc            String?
+  callbackData          Json?
+  
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  
+  @@index([transactionId])
+  @@index([mpesaReceiptNumber])
+  @@index([phoneNumber])
+  @@map("mpesa_transactions")
+}
+
+// Transaction Status History (for debugging)
+model TransactionStatusHistory {
+  id              String        @id @default(uuid())
+  transactionId   String
+  transaction     Transaction   @relation(fields: [transactionId], references: [id])
+  
+  fromStatus      TransactionStatus?
+  toStatus        TransactionStatus
+  reason          String?
+  metadata        Json?
+  
+  createdAt       DateTime      @default(now())
+  
+  @@index([transactionId])
+  @@index([createdAt])
+  @@map("transaction_status_history")
+}
+
+// Exchange Rate Cache (optional - MinMo handles this)
+model ExchangeRate {
+  id              String    @id @default(uuid())
+  fromCurrency    String
+  toCurrency      String
+  rate            Decimal   @db.Decimal(18, 8)
+  timestamp       DateTime  @default(now())
+  
+  @@unique([fromCurrency, toCurrency, timestamp])
+  @@index([timestamp])
+  @@map("exchange_rates")
+}
+
+// Transaction Statistics (for analytics)
+model TransactionStats {
+  id                    String    @id @default(uuid())
+  date                  DateTime  @unique
+  totalTransactions     Int       @default(0)
+  completedTransactions  Int       @default(0)
+  failedTransactions     Int       @default(0)
+  totalVolumeKes        Decimal   @db.Decimal(18, 2) @default(0)
+  totalVolumeBtc        Decimal   @db.Decimal(18, 8) @default(0)
+  totalFees             Decimal   @db.Decimal(18, 2) @default(0)
+  
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  
+  @@index([date])
+  @@map("transaction_stats")
+}

@@ -1,0 +1,426 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: bitpesa-minmo
+  labels:
+    name: bitpesa-minmo
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: bitpesa-secrets
+  namespace: bitpesa-minmo
+type: Opaque
+data:
+  # Base64 encoded values - replace with actual values
+  postgres-password: eW91cl9zZWN1cmVfcG9zdGdyZXNfcGFzc3dvcmQ=
+  minmo-api-key: eW91cl9taW5tb19hcGlfa2V5
+  minmo-webhook-secret: eW91cl9taW5tb193ZWJob29rX3NlY3JldA==
+  daraja-consumer-key: eW91cl9kYXJhamFfY29uc3VtZXJfa2V5
+  daraja-consumer-secret: eW91cl9kYXJhamFfY29uc3VtZXJfc2VjcmV0
+  daraja-passkey: eW91cl9kYXJhamFfcGFzc2tleQ==
+  at-api-key: eW91cl9hdF9hcGlfa2V5
+  at-username: eW91cl9hdF91c2VybmFtZQ==
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bitpesa-config
+  namespace: bitpesa-minmo
+data:
+  API_BASE_URL: "https://api.bitpesa.co.ke"
+  WEB_BASE_URL: "https://bitpesa.co.ke"
+  MINMO_API_URL: "https://api.minmo.com"
+  DARAJA_CALLBACK_URL: "https://api.bitpesa.co.ke/api/v1/webhooks/mpesa"
+  NODE_ENV: "production"
+  LOG_LEVEL: "info"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: bitpesa-minmo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:16-alpine
+        env:
+        - name: POSTGRES_DB
+          value: "bitpesa"
+        - name: POSTGRES_USER
+          value: "bitpesa"
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: bitpesa-secrets
+              key: postgres-password
+        ports:
+        - containerPort: 5432
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+      volumes:
+      - name: postgres-storage
+        persistentVolumeClaim:
+          claimName: postgres-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+  namespace: bitpesa-minmo
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: bitpesa-minmo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        ports:
+        - containerPort: 6379
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: transaction-service
+  namespace: bitpesa-minmo
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: transaction-service
+  template:
+    metadata:
+      labels:
+        app: transaction-service
+    spec:
+      containers:
+      - name: transaction-service
+        image: bitpesa/transaction-service:latest
+        ports:
+        - containerPort: 3000
+        env:
+        - name: DATABASE_URL
+          value: "postgresql://bitpesa:$(POSTGRES_PASSWORD)@postgres:5432/bitpesa"
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: bitpesa-secrets
+              key: postgres-password
+        - name: REDIS_URL
+          value: "redis://redis:6379"
+        - name: MINMO_SERVICE_URL
+          value: "http://minmo-service:3000"
+        - name: MPESA_SERVICE_URL
+          value: "http://mpesa-service:3000"
+        - name: NOTIFICATION_SERVICE_URL
+          value: "http://notification-service:3000"
+        - name: RECEIPT_SERVICE_URL
+          value: "http://receipt-service:3000"
+        envFrom:
+        - configMapRef:
+            name: bitpesa-config
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minmo-service
+  namespace: bitpesa-minmo
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: minmo-service
+  template:
+    metadata:
+      labels:
+        app: minmo-service
+    spec:
+      containers:
+      - name: minmo-service
+        image: bitpesa/minmo-service:latest
+        ports:
+        - containerPort: 3000
+        env:
+        - name: MINMO_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: bitpesa-secrets
+              key: minmo-api-key
+        - name: MINMO_WEBHOOK_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: bitpesa-secrets
+              key: minmo-webhook-secret
+        envFrom:
+        - configMapRef:
+            name: bitpesa-config
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mpesa-service
+  namespace: bitpesa-minmo
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: mpesa-service
+  template:
+    metadata:
+      labels:
+        app: mpesa-service
+    spec:
+      containers:
+      - name: mpesa-service
+        image: bitpesa/mpesa-service:latest
+        ports:
+        - containerPort: 3000
+        env:
+        - name: DATABASE_URL
+          value: "postgresql://bitpesa:$(POSTGRES_PASSWORD)@postgres:5432/bitpesa"
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: bitpesa-secrets
+              key: postgres-password
+        - name: DARAJA_CONSUMER_KEY
+          valueFrom:
+            secretKeyRef:
+              name: bitpesa-secrets
+              key: daraja-consumer-key
+        - name: DARAJA_CONSUMER_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: bitpesa-secrets
+              key: daraja-consumer-secret
+        - name: DARAJA_PASSKEY
+          valueFrom:
+            secretKeyRef:
+              name: bitpesa-secrets
+              key: daraja-passkey
+        envFrom:
+        - configMapRef:
+            name: bitpesa-config
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-service
+  namespace: bitpesa-minmo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: notification-service
+  template:
+    metadata:
+      labels:
+        app: notification-service
+    spec:
+      containers:
+      - name: notification-service
+        image: bitpesa/notification-service:latest
+        ports:
+        - containerPort: 3000
+        env:
+        - name: AFRICAS_TALKING_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: bitpesa-secrets
+              key: at-api-key
+        - name: AFRICAS_TALKING_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: bitpesa-secrets
+              key: at-username
+        envFrom:
+        - configMapRef:
+            name: bitpesa-config
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: receipt-service
+  namespace: bitpesa-minmo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: receipt-service
+  template:
+    metadata:
+      labels:
+        app: receipt-service
+    spec:
+      containers:
+      - name: receipt-service
+        image: bitpesa/receipt-service:latest
+        ports:
+        - containerPort: 3000
+        env:
+        - name: DATABASE_URL
+          value: "postgresql://bitpesa:$(POSTGRES_PASSWORD)@postgres:5432/bitpesa"
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: bitpesa-secrets
+              key: postgres-password
+        envFrom:
+        - configMapRef:
+            name: bitpesa-config
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-app
+  namespace: bitpesa-minmo
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: web-app
+  template:
+    metadata:
+      labels:
+        app: web-app
+    spec:
+      containers:
+      - name: web-app
+        image: bitpesa/web-app:latest
+        ports:
+        - containerPort: 3000
+        envFrom:
+        - configMapRef:
+            name: bitpesa-config
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 5

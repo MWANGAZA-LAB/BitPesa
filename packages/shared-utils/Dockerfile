@@ -1,37 +1,23 @@
-# Multi-stage build for BitPesa Shared Utils
-FROM node:20-alpine AS base
+# BitPesa Shared Utils Service
+# Refactored to use base template and best practices
 
-# Install dependencies only when needed
-FROM base AS deps
-RUN apk add --no-cache libc6-compat
-WORKDIR /app
+ARG SERVICE_NAME=shared-utils
+ARG PORT=3007
 
-# Copy package files
-COPY package.json pnpm-lock.yaml* ./
-COPY packages/shared-utils/package.json ./packages/shared-utils/
-COPY packages/shared-types/package.json ./packages/shared-types/
-
-# Install dependencies
-RUN npm install -g pnpm
-RUN pnpm install --frozen-lockfile
-
-# Rebuild the source code only when needed
+# Use base template
 FROM base AS builder
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
 
-# Build shared types first
+# Build shared types first (dependency)
 RUN pnpm --filter @bitpesa/shared-types build
 
 # Build shared utils
 RUN pnpm --filter @bitpesa/shared-utils build
 
-# Production image, copy all the files
+# Production image
 FROM base AS runner
-WORKDIR /app
 
 ENV NODE_ENV=production
+ENV PORT=${PORT}
 
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nestjs
@@ -43,5 +29,11 @@ COPY --from=builder --chown=nestjs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nestjs:nodejs /app/packages/shared-types/dist ./packages/shared-types/dist
 
 USER nestjs
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:${PORT}/health || exit 1
+
+EXPOSE ${PORT}
 
 CMD ["node", "dist/index.js"]

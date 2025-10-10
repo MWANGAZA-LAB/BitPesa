@@ -1,95 +1,101 @@
-import { Injectable, NotFoundException, BadRequestException, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConversionService } from '../conversion/conversion.service';
 import { NotificationService } from '../notification/notification.service';
-import { LoggerService } from '../logger/logger.service';
 import { CreateTransactionDto } from './dto';
-import { Transaction, TransactionType, TransactionStatus, PaginatedResponse } from '@bitpesa/shared-types';
-import { generateUniqueId, toPrismaDecimal } from '@bitpesa/shared-utils';
+import { Transaction, TransactionStatus, PaginatedResponse } from '@bitpesa/shared-types';
+import { toPrismaDecimal } from '@bitpesa/shared-utils';
+import { 
+  AppConfigService, 
+  ErrorHandlerService, 
+  RetryService,
+  TRANSACTION_CONSTANTS
+} from '@bitpesa/shared-config';
 import { v4 as uuidv4 } from 'uuid';
 import * as crypto from 'crypto';
 
 @Injectable()
 export class TransactionService {
+  private readonly logger = new Logger(TransactionService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly conversionService: ConversionService,
     private readonly notificationService: NotificationService,
-    private readonly logger: LoggerService,
-  ) {
-    this.logger.setContext('TransactionService');
-  }
+    private readonly appConfig: AppConfigService,
+    private readonly errorHandler: ErrorHandlerService,
+    private readonly retryService: RetryService,
+  ) {}
 
   async createTransaction(dto: CreateTransactionDto): Promise<Transaction> {
     this.logger.log(`Creating transaction: ${dto.transactionType} for ${dto.recipientPhone}`);
 
     try {
+      // Validate transaction amount
+      this.validateTransactionAmount(dto.kesAmount);
+
       // Generate unique payment hash
       const paymentHash = this.generatePaymentHash();
       
-      // Get current exchange rate
-      const exchangeRate = await this.conversionService.getCurrentRate('BTC', 'KES');
-      if (!exchangeRate) {
-        throw new InternalServerErrorException('Unable to get current exchange rate');
-      }
-
+      // Get current exchange rate with retry logic
+      const exchangeRate = await this.getExchangeRateWithRetry();
+      
       // Calculate amounts
       const feeAmount = this.calculateFee(dto.kesAmount);
       const totalKesAmount = dto.kesAmount + feeAmount;
       const btcAmount = totalKesAmount / exchangeRate.finalRate;
 
+      // Validate calculated amounts
+      this.validateCalculatedAmounts(btcAmount, totalKesAmount);
+
       // Create transaction
-      const transaction = await this.prisma.transaction.create({
-        data: {
-          id: uuidv4(),
-          paymentHash,
-          transactionType: dto.transactionType,
-          status: TransactionStatus.PENDING,
-          btcAmount: toPrismaDecimal(btcAmount),
-          kesAmount: toPrismaDecimal(dto.kesAmount),
-          exchangeRate: toPrismaDecimal(exchangeRate.finalRate),
-          feeAmount: toPrismaDecimal(feeAmount),
-          totalKesAmount: toPrismaDecimal(totalKesAmount),
-          recipientPhone: dto.recipientPhone,
-          recipientName: dto.recipientName,
-          merchantCode: dto.merchantCode,
-          accountNumber: dto.accountNumber,
-          referenceNumber: dto.referenceNumber,
-          ipAddress: dto.ipAddress,
-          userAgent: dto.userAgent,
-          deviceInfo: dto.deviceInfo,
-          invoiceExpiresAt: new Date(Date.now() + 5 * 60 * 1000), // 5 minutes
-        },
+      const transaction = await this.createTransactionRecord({
+        paymentHash,
+        dto,
+        btcAmount,
+        totalKesAmount,
+        feeAmount,
+        exchangeRate: exchangeRate.finalRate,
       });
 
-      // Generate Lightning invoice
-      await this.generateLightningInvoice(transaction);
+      // Generate Lightning invoice with retry logic
+      await this.generateLightningInvoiceWithRetry(transaction);
 
       this.logger.log(`Transaction created: ${transaction.id} with payment hash: ${paymentHash}`);
       return this.mapTransactionToResponse(transaction);
 
     } catch (error) {
-      this.logger.error('Failed to create transaction', error.stack);
-      throw new InternalServerErrorException('Failed to create transaction');
+      this.errorHandler.handleError(error, 'TransactionService.createTransaction');
+      throw this.errorHandler.createExternalServiceError('Transaction', 'creation');
     }
   }
 
   async getTransactionByPaymentHash(paymentHash: string): Promise<Transaction> {
     this.logger.log(`Fetching transaction with payment hash: ${paymentHash}`);
 
-    const transaction = await this.prisma.transaction.findUnique({
-      where: { paymentHash },
-      include: {
-        lightningInvoice: true,
-        mpesaTransaction: true,
-      },
-    });
+    try {
+      const transaction = await this.prisma.transaction.findUnique({
+        where: { paymentHash },
+        include: {
+          lightningInvoice: true,
+          mpesaTransaction: true,
+        },
+      });
 
-    if (!transaction) {
-      throw new NotFoundException(`Transaction with payment hash ${paymentHash} not found`);
+      if (!transaction) {
+        throw this.errorHandler.createNotFoundError('Transaction', paymentHash);
+      }
+
+      return this.mapTransactionToResponse(transaction);
+    } catch (error) {
+      this.errorHandler.handleError(error, 'TransactionService.getTransactionByPaymentHash');
+      
+      if (error instanceof Error && error.message.includes('not found')) {
+        throw error; // Re-throw not found errors as-is
+      }
+      
+      throw this.errorHandler.createExternalServiceError('Transaction', 'retrieval');
     }
-
-    return this.mapTransactionToResponse(transaction);
   }
 
   async getTransactionStatus(paymentHash: string): Promise<{ status: string; progress: number }> {
@@ -177,7 +183,7 @@ export class TransactionService {
   async updateTransactionStatus(
     paymentHash: string, 
     status: TransactionStatus, 
-    additionalData?: any
+    _additionalData?: any
   ): Promise<void> {
     this.logger.log(`Updating transaction ${paymentHash} status to ${status}`);
 
@@ -202,9 +208,189 @@ export class TransactionService {
   }
 
   private calculateFee(amount: number): number {
-    // 1% fee with minimum 5 KES
-    const fee = Math.max(amount * 0.01, 5);
+    // Use configured fee percentage with minimum fee
+    const fee = Math.max(amount * TRANSACTION_CONSTANTS.FEE_PERCENTAGE, 5);
     return Math.round(fee * 100) / 100; // Round to 2 decimal places
+  }
+
+  /**
+   * Validate transaction amount against configured limits
+   */
+  private validateTransactionAmount(amount: number): void {
+    if (amount < TRANSACTION_CONSTANTS.MIN_KES_AMOUNT) {
+      throw this.errorHandler.createValidationError(
+        `Transaction amount must be at least ${TRANSACTION_CONSTANTS.MIN_KES_AMOUNT} KES`
+      );
+    }
+    
+    if (amount > TRANSACTION_CONSTANTS.MAX_KES_AMOUNT) {
+      throw this.errorHandler.createValidationError(
+        `Transaction amount cannot exceed ${TRANSACTION_CONSTANTS.MAX_KES_AMOUNT} KES`
+      );
+    }
+  }
+
+  /**
+   * Validate calculated amounts
+   */
+  private validateCalculatedAmounts(btcAmount: number, _totalKesAmount: number): void {
+    if (btcAmount < TRANSACTION_CONSTANTS.MIN_BTC_AMOUNT) {
+      throw this.errorHandler.createValidationError(
+        `Calculated BTC amount ${btcAmount} is below minimum ${TRANSACTION_CONSTANTS.MIN_BTC_AMOUNT}`
+      );
+    }
+    
+    if (btcAmount > TRANSACTION_CONSTANTS.MAX_BTC_AMOUNT) {
+      throw this.errorHandler.createValidationError(
+        `Calculated BTC amount ${btcAmount} exceeds maximum ${TRANSACTION_CONSTANTS.MAX_BTC_AMOUNT}`
+      );
+    }
+  }
+
+  /**
+   * Get exchange rate with retry logic
+   */
+  private async getExchangeRateWithRetry() {
+    const result = await this.retryService.executeWithRetry(
+      () => this.conversionService.getCurrentRate('BTC', 'KES'),
+      {
+        maxAttempts: TRANSACTION_CONSTANTS.MAX_RETRY_ATTEMPTS,
+        retryCondition: (error: any) => this.errorHandler.isRetryableError(error),
+      }
+    );
+
+    if (!result.success || !result.data) {
+      throw this.errorHandler.createExternalServiceError('Exchange Rate', 'fetching');
+    }
+
+    return result.data;
+  }
+
+  /**
+   * Create transaction record in database
+   */
+  private async createTransactionRecord(params: {
+    paymentHash: string;
+    dto: CreateTransactionDto;
+    btcAmount: number;
+    totalKesAmount: number;
+    feeAmount: number;
+    exchangeRate: number;
+  }) {
+    const { paymentHash, dto, btcAmount, totalKesAmount, feeAmount, exchangeRate } = params;
+    
+    return await this.prisma.transaction.create({
+      data: {
+        id: uuidv4(),
+        paymentHash,
+        transactionType: dto.transactionType,
+        status: TransactionStatus.PENDING,
+        btcAmount: toPrismaDecimal(btcAmount),
+        kesAmount: toPrismaDecimal(dto.kesAmount),
+        exchangeRate: toPrismaDecimal(exchangeRate),
+        feeAmount: toPrismaDecimal(feeAmount),
+        totalKesAmount: toPrismaDecimal(totalKesAmount),
+        recipientPhone: dto.recipientPhone,
+        recipientName: dto.recipientName,
+        merchantCode: dto.merchantCode,
+        accountNumber: dto.accountNumber,
+        referenceNumber: dto.referenceNumber,
+        ipAddress: dto.ipAddress,
+        userAgent: dto.userAgent,
+        deviceInfo: dto.deviceInfo,
+        invoiceExpiresAt: new Date(Date.now() + TRANSACTION_CONSTANTS.INVOICE_EXPIRATION_MS),
+      },
+    });
+  }
+
+  /**
+   * Create transaction record
+   */
+  async create(dto: CreateTransactionDto): Promise<Transaction> {
+    return this.createTransaction(dto);
+  }
+
+  /**
+   * Update transaction
+   */
+  async update(id: string, data: any): Promise<Transaction> {
+    this.logger.log(`Updating transaction: ${id}`);
+    
+    try {
+      const updatedTransaction = await this.prisma.transaction.update({
+        where: { id },
+        data: {
+          ...data,
+          updatedAt: new Date(),
+        },
+      });
+
+      return this.mapTransactionToResponse(updatedTransaction);
+    } catch (error) {
+      this.errorHandler.handleError(error, 'TransactionService.update');
+      throw this.errorHandler.createExternalServiceError('Transaction', 'update');
+    }
+  }
+
+  /**
+   * Find transaction by ID
+   */
+  async findById(id: string): Promise<Transaction | null> {
+    this.logger.log(`Finding transaction by ID: ${id}`);
+    
+    try {
+      const transaction = await this.prisma.transaction.findUnique({
+        where: { id },
+        include: {
+          lightningInvoice: true,
+          mpesaTransaction: true,
+        },
+      });
+
+      return transaction ? this.mapTransactionToResponse(transaction) : null;
+    } catch (error) {
+      this.errorHandler.handleError(error, 'TransactionService.findById');
+      return null;
+    }
+  }
+
+  /**
+   * Find transaction by MinMo swap ID
+   */
+  async findByMinmoSwapId(swapId: string): Promise<Transaction | null> {
+    this.logger.log(`Finding transaction by MinMo swap ID: ${swapId}`);
+    
+    try {
+      const transaction = await this.prisma.transaction.findFirst({
+        where: { minmoSwapId: swapId },
+        include: {
+          lightningInvoice: true,
+          mpesaTransaction: true,
+        },
+      });
+
+      return transaction ? this.mapTransactionToResponse(transaction) : null;
+    } catch (error) {
+      this.errorHandler.handleError(error, 'TransactionService.findByMinmoSwapId');
+      return null;
+    }
+  }
+
+  /**
+   * Generate Lightning invoice with retry logic
+   */
+  private async generateLightningInvoiceWithRetry(transaction: any): Promise<void> {
+    const result = await this.retryService.executeWithRetry(
+      () => this.generateLightningInvoice(transaction),
+      {
+        maxAttempts: TRANSACTION_CONSTANTS.MAX_RETRY_ATTEMPTS,
+        retryCondition: (error: any) => this.errorHandler.isRetryableError(error),
+      }
+    );
+
+    if (!result.success) {
+      throw this.errorHandler.createExternalServiceError('Lightning Invoice', 'generation');
+    }
   }
 
   private async generateLightningInvoice(transaction: any): Promise<void> {

@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService, LoggerService } from '@bitpesa/shared-infrastructure';
 import { PrometheusService } from './prometheus.service';
 
 export interface SystemMetrics {

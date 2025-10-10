@@ -1,397 +1,268 @@
 'use client';
 
 import { useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, CheckCircle, XCircle } from 'lucide-react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import * as z from 'zod';
+import { Loader2, CreditCard, FileText } from 'lucide-react';
+import QRCode from 'qrcode.react';
 
 const paybillSchema = z.object({
-  phoneNumber: z.string()
-    .min(10, 'Phone number must be at least 10 digits')
-    .max(15, 'Phone number must be at most 15 digits')
-    .regex(/^254\d{9}$/, 'Please enter a valid Kenyan phone number (254XXXXXXXXX)'),
   businessNumber: z.string()
-    .min(5, 'Business number must be at least 5 digits')
-    .max(7, 'Business number must be at most 7 digits')
-    .regex(/^\d+$/, 'Business number must contain only digits'),
+    .length(6, 'Business number must be exactly 6 digits')
+    .regex(/^[0-9]+$/, 'Business number must contain only digits'),
   accountNumber: z.string()
     .min(1, 'Account number is required')
     .max(20, 'Account number must be at most 20 characters'),
   amount: z.number()
     .min(10, 'Minimum amount is 10 KES')
     .max(150000, 'Maximum amount is 150,000 KES'),
-  reference: z.string().optional(),
+  phoneNumber: z.string()
+    .min(10, 'Phone number must be at least 10 digits')
+    .max(12, 'Phone number must be at most 12 digits')
+    .regex(/^[0-9]+$/, 'Phone number must contain only digits'),
 });
 
 type PaybillForm = z.infer<typeof paybillSchema>;
 
-interface TransactionState {
-  status: 'idle' | 'creating' | 'pending' | 'paid' | 'completed' | 'failed';
-  paymentHash?: string;
-  lightningInvoice?: string;
-  qrCode?: string;
-  error?: string;
-  mpesaReceipt?: string;
+interface TransactionResponse {
+  transactionId: string;
+  btcAddress: string;
+  btcAmount: number;
+  kesAmount: number;
+  exchangeRate: number;
+  totalFees: number;
+  expiresAt: string;
+  qrCode: string;
 }
 
 export default function PaybillPage() {
-  const [transactionState, setTransactionState] = useState<TransactionState>({ status: 'idle' });
-  const [btcAmount, setBtcAmount] = useState<number>(0);
-  const [exchangeRate, setExchangeRate] = useState<number>(0);
-  const [fee, setFee] = useState<number>(0);
-
+  const [transaction, setTransaction] = useState<TransactionResponse | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
   const {
     register,
     handleSubmit,
-    watch,
     formState: { errors },
+    watch,
   } = useForm<PaybillForm>({
     resolver: zodResolver(paybillSchema),
   });
-
-  const watchedAmount = watch('amount');
-
-  // Fetch exchange rate when amount changes
-  React.useEffect(() => {
-    if (watchedAmount && watchedAmount > 0) {
-      fetchExchangeRate(watchedAmount);
-    }
-  }, [watchedAmount]);
-
-  const fetchExchangeRate = async (amount: number) => {
-    try {
-      const response = await fetch('/api/v1/rates/convert?from=KES&to=BTC&amount=' + amount);
-      const data = await response.json();
-      
-      if (data.success) {
-        setBtcAmount(data.data.toAmount);
-        setExchangeRate(data.data.rate);
-        setFee(data.data.fee);
-      }
-    } catch (error) {
-      console.error('Failed to fetch exchange rate:', error);
-    }
-  };
-
+  
+  const amount = watch('amount');
+  
   const onSubmit = async (data: PaybillForm) => {
-    setTransactionState({ status: 'creating' });
-
+    setIsLoading(true);
+    setError(null);
+    
     try {
       const response = await fetch('/api/v1/transactions/paybill', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(data),
+        body: JSON.stringify({
+          recipientPhone: data.phoneNumber,
+          amount: data.amount,
+          merchantCode: data.businessNumber,
+          accountNumber: data.accountNumber,
+        }),
       });
-
-      const result = await response.json();
-
-      if (result.success) {
-        setTransactionState({
-          status: 'pending',
-          paymentHash: result.data.paymentHash,
-          lightningInvoice: result.data.lightningInvoice?.paymentRequest,
-          qrCode: result.data.lightningInvoice?.paymentRequest,
-        });
-
-        // Start polling for payment status
-        pollPaymentStatus(result.data.paymentHash);
-      } else {
-        setTransactionState({
-          status: 'failed',
-          error: result.error?.message || 'Failed to create transaction',
-        });
+      
+      if (!response.ok) {
+        throw new Error('Failed to create transaction');
       }
-    } catch (error) {
-      setTransactionState({
-        status: 'failed',
-        error: 'Network error. Please try again.',
-      });
+      
+      const result = await response.json();
+      setTransaction(result);
+      
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setIsLoading(false);
     }
   };
-
-  const pollPaymentStatus = async (paymentHash: string) => {
-    const pollInterval = setInterval(async () => {
-      try {
-        const response = await fetch(`/api/v1/transactions/${paymentHash}/status`);
-        const result = await response.json();
-
-        if (result.success) {
-          if (result.data.status === 'completed') {
-            setTransactionState(prev => ({
-              ...prev,
-              status: 'completed',
-              mpesaReceipt: result.data.mpesaReceiptNumber,
-            }));
-            clearInterval(pollInterval);
-          } else if (result.data.status === 'failed') {
-            setTransactionState(prev => ({
-              ...prev,
-              status: 'failed',
-              error: 'Transaction failed',
-            }));
-            clearInterval(pollInterval);
-          }
-        }
-      } catch (error) {
-        console.error('Failed to check payment status:', error);
-      }
-    }, 2000);
-
-    setTimeout(() => {
-      clearInterval(pollInterval);
-    }, 300000);
-  };
-
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-  };
-
-  return (
-    <div className="container mx-auto px-4 py-8 max-w-2xl">
-      <div className="text-center mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-          Pay Bill
-        </h1>
-        <p className="text-gray-600 dark:text-gray-400">
-          Pay with Bitcoin Lightning and settle your bills via M-Pesa
-        </p>
-      </div>
-
-      {transactionState.status === 'idle' && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Bill Payment Details</CardTitle>
-            <CardDescription>
-              Enter the business number, account number, and amount to pay
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="phoneNumber">Your Phone Number *</Label>
-                  <Input
-                    id="phoneNumber"
-                    placeholder="254XXXXXXXXX"
-                    {...register('phoneNumber')}
-                    className={errors.phoneNumber ? 'border-red-500' : ''}
-                  />
-                  {errors.phoneNumber && (
-                    <p className="text-red-500 text-sm mt-1">{errors.phoneNumber.message}</p>
-                  )}
-                </div>
-
-                <div>
-                  <Label htmlFor="businessNumber">Business Number *</Label>
-                  <Input
-                    id="businessNumber"
-                    placeholder="600988"
-                    {...register('businessNumber')}
-                    className={errors.businessNumber ? 'border-red-500' : ''}
-                  />
-                  {errors.businessNumber && (
-                    <p className="text-red-500 text-sm mt-1">{errors.businessNumber.message}</p>
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <Label htmlFor="accountNumber">Account Number *</Label>
-                <Input
-                  id="accountNumber"
-                  placeholder="Account number or reference"
-                  {...register('accountNumber')}
-                  className={errors.accountNumber ? 'border-red-500' : ''}
-                />
-                {errors.accountNumber && (
-                  <p className="text-red-500 text-sm mt-1">{errors.accountNumber.message}</p>
-                )}
-              </div>
-
-              <div>
-                <Label htmlFor="amount">Amount (KES) *</Label>
-                <Input
-                  id="amount"
-                  type="number"
-                  placeholder="1000"
-                  {...register('amount', { valueAsNumber: true })}
-                  className={errors.amount ? 'border-red-500' : ''}
-                />
-                {errors.amount && (
-                  <p className="text-red-500 text-sm mt-1">{errors.amount.message}</p>
-                )}
-              </div>
-
-              <div>
-                <Label htmlFor="reference">Reference (Optional)</Label>
-                <Input
-                  id="reference"
-                  placeholder="Payment reference"
-                  {...register('reference')}
-                />
-              </div>
-
-              {watchedAmount && watchedAmount > 0 && (
-                <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
-                  <h3 className="font-semibold mb-2">Payment Summary</h3>
-                  <div className="space-y-1 text-sm">
-                    <div className="flex justify-between">
-                      <span>Amount (KES):</span>
-                      <span>{watchedAmount.toLocaleString()} KES</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Fee:</span>
-                      <span>{fee.toFixed(2)} KES</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Total (KES):</span>
-                      <span>{(watchedAmount + fee).toLocaleString()} KES</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Bitcoin Amount:</span>
-                      <span>{btcAmount.toFixed(8)} BTC</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Exchange Rate:</span>
-                      <span>1 BTC = {exchangeRate.toLocaleString()} KES</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <Button type="submit" className="w-full" size="lg">
-                Pay Bill with Bitcoin
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-      )}
-
-      {transactionState.status === 'creating' && (
-        <Card>
-          <CardContent className="text-center py-8">
-            <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
-            <h3 className="text-lg font-semibold mb-2">Creating Transaction</h3>
-            <p className="text-gray-600 dark:text-gray-400">
-              Please wait while we create your Lightning invoice...
-            </p>
-          </CardContent>
-        </Card>
-      )}
-
-      {transactionState.status === 'pending' && (
+  
+  if (transaction) {
+    return (
+      <div className="container mx-auto px-4 py-8 max-w-2xl">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Loader2 className="h-5 w-5 animate-spin" />
-              Payment Pending
+              <FileText className="h-6 w-6 text-purple-500" />
+              Pay Bill with Bitcoin
             </CardTitle>
             <CardDescription>
-              Scan the QR code or copy the invoice to pay with your Lightning wallet
+              Send {transaction.btcAmount} BTC to pay {transaction.kesAmount} KES bill
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            {transactionState.qrCode && (
-              <div className="text-center">
-                <div className="bg-white p-4 rounded-lg inline-block">
-                  <div className="w-48 h-48 bg-gray-100 flex items-center justify-center text-gray-500">
-                    QR Code
-                  </div>
-                </div>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
-                  Scan with your Lightning wallet
-                </p>
-              </div>
-            )}
-
-            {transactionState.lightningInvoice && (
+            <div className="text-center">
+              <QRCode 
+                value={transaction.qrCode}
+                size={256}
+                className="mx-auto"
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label>Bitcoin Address</Label>
+              <Input 
+                value={transaction.btcAddress}
+                readOnly
+                className="font-mono text-sm"
+              />
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
-                <Label>Lightning Invoice</Label>
-                <div className="flex gap-2">
-                  <Input
-                    value={transactionState.lightningInvoice}
-                    readOnly
-                    className="font-mono text-xs"
-                  />
-                  <Button
-                    variant="outline"
-                    onClick={() => copyToClipboard(transactionState.lightningInvoice!)}
-                  >
-                    Copy
-                  </Button>
-                </div>
+                <Label className="text-muted-foreground">Bitcoin Amount</Label>
+                <p className="font-semibold">{transaction.btcAmount} BTC</p>
               </div>
-            )}
-
+              <div>
+                <Label className="text-muted-foreground">Bill Amount</Label>
+                <p className="font-semibold">{transaction.kesAmount} KES</p>
+              </div>
+              <div>
+                <Label className="text-muted-foreground">Exchange Rate</Label>
+                <p className="font-semibold">1 BTC = {transaction.exchangeRate} KES</p>
+              </div>
+              <div>
+                <Label className="text-muted-foreground">Total Fees</Label>
+                <p className="font-semibold">{transaction.totalFees} KES</p>
+              </div>
+            </div>
+            
             <Alert>
               <AlertDescription>
-                <strong>Important:</strong> This invoice expires in 5 minutes. 
-                Please pay promptly to complete your bill payment.
+                ⏰ This payment expires in 15 minutes. Send the exact amount to the address above.
               </AlertDescription>
             </Alert>
-
-            <div className="text-center">
-              <Button
-                onClick={() => window.open(`lightning:${transactionState.lightningInvoice}`)}
-                className="w-full"
+            
+            <div className="flex gap-2">
+              <Button 
+                variant="outline" 
+                onClick={() => setTransaction(null)}
+                className="flex-1"
               >
-                Open in Lightning Wallet
+                New Transaction
+              </Button>
+              <Button 
+                onClick={() => window.open(`/receipt/${transaction.transactionId}`, '_blank')}
+                className="flex-1"
+              >
+                View Receipt
               </Button>
             </div>
           </CardContent>
         </Card>
-      )}
-
-      {transactionState.status === 'completed' && (
-        <Card>
-          <CardContent className="text-center py-8">
-            <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-4" />
-            <h3 className="text-2xl font-bold text-green-600 mb-2">Bill Paid Successfully!</h3>
-            <p className="text-gray-600 dark:text-gray-400 mb-4">
-              Your bill payment has been processed and sent to the business.
-            </p>
-            {transactionState.mpesaReceipt && (
-              <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
-                <p className="text-sm">
-                  <strong>M-Pesa Receipt:</strong> {transactionState.mpesaReceipt}
+      </div>
+    );
+  }
+  
+  return (
+    <div className="container mx-auto px-4 py-8 max-w-md">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <CreditCard className="h-6 w-6 text-purple-500" />
+            Pay Bill
+          </CardTitle>
+          <CardDescription>
+            Pay utility bills and services with Bitcoin
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="businessNumber">Business Number</Label>
+              <Input
+                id="businessNumber"
+                placeholder="123456"
+                {...register('businessNumber')}
+              />
+              {errors.businessNumber && (
+                <p className="text-sm text-red-500">{errors.businessNumber.message}</p>
+              )}
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="accountNumber">Account Number</Label>
+              <Input
+                id="accountNumber"
+                placeholder="Your account number"
+                {...register('accountNumber')}
+              />
+              {errors.accountNumber && (
+                <p className="text-sm text-red-500">{errors.accountNumber.message}</p>
+              )}
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="amount">Amount (KES)</Label>
+              <Input
+                id="amount"
+                type="number"
+                placeholder="1000"
+                {...register('amount', { valueAsNumber: true })}
+              />
+              {errors.amount && (
+                <p className="text-sm text-red-500">{errors.amount.message}</p>
+              )}
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="phoneNumber">Your Phone Number</Label>
+              <Input
+                id="phoneNumber"
+                placeholder="254700000000"
+                {...register('phoneNumber')}
+              />
+              {errors.phoneNumber && (
+                <p className="text-sm text-red-500">{errors.phoneNumber.message}</p>
+              )}
+            </div>
+            
+            {amount && (
+              <div className="p-3 bg-muted rounded-lg">
+                <p className="text-sm text-muted-foreground">
+                  Estimated Bitcoin amount: ~{(amount / 5000000).toFixed(8)} BTC
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  * Exchange rate varies. Final amount will be calculated when you create the transaction.
                 </p>
               </div>
             )}
-            <Button
-              onClick={() => setTransactionState({ status: 'idle' })}
-              className="mt-4"
+            
+            {error && (
+              <Alert variant="destructive">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+            
+            <Button 
+              type="submit" 
+              className="w-full" 
+              disabled={isLoading}
             >
-              Pay Another Bill
+              {isLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Creating Transaction...
+                </>
+              ) : (
+                'Pay Bill'
+              )}
             </Button>
-          </CardContent>
-        </Card>
-      )}
-
-      {transactionState.status === 'failed' && (
-        <Card>
-          <CardContent className="text-center py-8">
-            <XCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
-            <h3 className="text-2xl font-bold text-red-600 mb-2">Payment Failed</h3>
-            <p className="text-gray-600 dark:text-gray-400 mb-4">
-              {transactionState.error || 'An error occurred while processing your bill payment.'}
-            </p>
-            <Button
-              onClick={() => setTransactionState({ status: 'idle' })}
-              className="mt-4"
-            >
-              Try Again
-            </Button>
-          </CardContent>
-        </Card>
-      )}
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -1,0 +1,182 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: bitpesa-minmo
+spec:
+  selector:
+    app: postgres
+  ports:
+  - port: 5432
+    targetPort: 5432
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: bitpesa-minmo
+spec:
+  selector:
+    app: redis
+  ports:
+  - port: 6379
+    targetPort: 6379
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: transaction-service
+  namespace: bitpesa-minmo
+spec:
+  selector:
+    app: transaction-service
+  ports:
+  - port: 3000
+    targetPort: 3000
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minmo-service
+  namespace: bitpesa-minmo
+spec:
+  selector:
+    app: minmo-service
+  ports:
+  - port: 3000
+    targetPort: 3000
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mpesa-service
+  namespace: bitpesa-minmo
+spec:
+  selector:
+    app: mpesa-service
+  ports:
+  - port: 3000
+    targetPort: 3000
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-service
+  namespace: bitpesa-minmo
+spec:
+  selector:
+    app: notification-service
+  ports:
+  - port: 3000
+    targetPort: 3000
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: receipt-service
+  namespace: bitpesa-minmo
+spec:
+  selector:
+    app: receipt-service
+  ports:
+  - port: 3000
+    targetPort: 3000
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-app
+  namespace: bitpesa-minmo
+spec:
+  selector:
+    app: web-app
+  ports:
+  - port: 3000
+    targetPort: 3000
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: bitpesa-ingress
+  namespace: bitpesa-minmo
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - bitpesa.co.ke
+    - api.bitpesa.co.ke
+    secretName: bitpesa-tls
+  rules:
+  - host: bitpesa.co.ke
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: web-app
+            port:
+              number: 3000
+  - host: api.bitpesa.co.ke
+    http:
+      paths:
+      - path: /api/v1/transactions
+        pathType: Prefix
+        backend:
+          service:
+            name: transaction-service
+            port:
+              number: 3000
+      - path: /api/v1/minmo
+        pathType: Prefix
+        backend:
+          service:
+            name: minmo-service
+            port:
+              number: 3000
+      - path: /api/v1/webhooks/mpesa
+        pathType: Prefix
+        backend:
+          service:
+            name: mpesa-service
+            port:
+              number: 3000
+      - path: /api/v1/webhooks/minmo
+        pathType: Prefix
+        backend:
+          service:
+            name: minmo-service
+            port:
+              number: 3000
+      - path: /api/v1/receipts
+        pathType: Prefix
+        backend:
+          service:
+            name: receipt-service
+            port:
+              number: 3000
+      - path: /api/v1/notifications
+        pathType: Prefix
+        backend:
+          service:
+            name: notification-service
+            port:
+              number: 3000
+      - path: /health
+        pathType: Prefix
+        backend:
+          service:
+            name: transaction-service
+            port:
+              number: 3000

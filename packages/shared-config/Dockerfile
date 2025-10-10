@@ -1,33 +1,20 @@
-# Multi-stage build for BitPesa Shared Config
-FROM node:20-alpine AS base
+# BitPesa Shared Config Service
+# Refactored to use base template and best practices
 
-# Install dependencies only when needed
-FROM base AS deps
-RUN apk add --no-cache libc6-compat
-WORKDIR /app
+ARG SERVICE_NAME=shared-config
+ARG PORT=3006
 
-# Copy package files
-COPY package.json pnpm-lock.yaml* ./
-COPY packages/shared-config/package.json ./packages/shared-config/
-
-# Install dependencies
-RUN npm install -g pnpm
-RUN pnpm install --frozen-lockfile
-
-# Rebuild the source code only when needed
+# Use base template
 FROM base AS builder
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
 
 # Build shared config
 RUN pnpm --filter @bitpesa/shared-config build
 
-# Production image, copy all the files
+# Production image
 FROM base AS runner
-WORKDIR /app
 
 ENV NODE_ENV=production
+ENV PORT=${PORT}
 
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nestjs
@@ -38,5 +25,11 @@ COPY --from=builder --chown=nestjs:nodejs /app/packages/shared-config/package.js
 COPY --from=builder --chown=nestjs:nodejs /app/node_modules ./node_modules
 
 USER nestjs
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:${PORT}/health || exit 1
+
+EXPOSE ${PORT}
 
 CMD ["node", "dist/index.js"]

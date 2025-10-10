@@ -12,15 +12,13 @@ import {
 } from '@nestjs/common';
 import { TransactionService } from './transaction.service';
 import { 
-  CreateTransactionDto, 
   SendMoneyDto, 
   BuyAirtimeDto, 
   PaybillDto, 
   BuyGoodsDto, 
   ScanPayDto 
 } from './dto';
-import { ApiResponse, Transaction, PaginatedResponse } from '@bitpesa/shared-types';
-import { IsValidUUID } from '@bitpesa/shared-utils';
+import { Transaction, PaginatedResponse } from '@bitpesa/shared-types';
 import { ThrottlerGuard } from '@nestjs/throttler';
 
 @Controller('transactions')

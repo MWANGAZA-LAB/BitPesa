@@ -1,18 +1,16 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { TransactionService } from '../transaction/transaction.service';
-import { LightningService } from '../../lightning-service/src/lightning/lightning.service';
-import { MpesaService } from '../../mpesa-service/src/mpesa/mpesa.service';
-import { ConversionService } from '../../conversion-service/src/conversion/conversion.service';
+import { LightningService } from '../external/lightning.service';
+import { MpesaService } from '../external/mpesa.service';
+import { ConversionService } from '../conversion/conversion.service';
 import { CreateBtcToMpesaTransactionDto } from '../dto/create-btc-to-mpesa-transaction.dto';
-import { Transaction, TransactionStatus } from '@bitpesa/shared-types';
+import { Transaction } from '@bitpesa/shared-types';
 
 @Injectable()
 export class TransactionOrchestratorService {
   private readonly logger = new Logger(TransactionOrchestratorService.name);
 
   constructor(
-    private readonly configService: ConfigService,
     private readonly transactionService: TransactionService,
     private readonly lightningService: LightningService,
     private readonly mpesaService: MpesaService,
@@ -163,7 +161,7 @@ export class TransactionOrchestratorService {
       // Update transaction status to failed
       await this.transactionService.update(transaction.id, {
         status: 'MPESA_FAILED',
-        failureReason: error.message,
+        failureReason: (error as Error).message,
         mpesaFailedAt: new Date(),
       });
 
