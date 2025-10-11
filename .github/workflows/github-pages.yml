@@ -37,6 +37,15 @@ jobs:
 
       - name: Build web app
         run: pnpm build --filter=@bitpesa/web
+        env:
+          NODE_ENV: production
+
+      - name: Verify build output
+        run: |
+          echo "Build output contents:"
+          ls -la apps/web/out/
+          echo "Checking for index.html:"
+          ls -la apps/web/out/index.html || echo "index.html not found"
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
