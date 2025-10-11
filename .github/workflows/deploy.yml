@@ -24,7 +24,7 @@ jobs:
     name: Deploy to Staging
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
-    environment: staging
+    # environment: staging  # Comment out until environment is created
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -72,7 +72,7 @@ jobs:
     name: Deploy to Production
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production'
-    environment: production
+    # environment: production  # Comment out until environment is created
     needs: [deploy-staging]
     steps:
       - name: Checkout code
