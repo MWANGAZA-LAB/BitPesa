@@ -87,7 +87,19 @@ export async function verifyToken(token: string): Promise<AuthToken | null> {
   try {
     const secret = getJWTSecret();
     const { payload } = await jwtVerify(token, secret);
-    return payload as AuthToken;
+    
+    // Safely convert JWTPayload to AuthToken
+    if (payload.sub && payload.username && payload.role) {
+      return {
+        sub: payload.sub,
+        username: payload.username as string,
+        role: payload.role as string,
+        iat: payload.iat || 0,
+        exp: payload.exp || 0,
+      };
+    }
+    
+    return null;
   } catch (error) {
     return null;
   }
