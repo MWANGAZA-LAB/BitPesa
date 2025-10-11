@@ -76,6 +76,7 @@ jobs:
         run: pnpm audit --audit-level moderate
 
       - name: Run Trivy vulnerability scanner
+        id: trivy
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: 'fs'
@@ -84,8 +85,8 @@ jobs:
           output: 'trivy-results.sarif'
 
       - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v2
-        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        if: always() && steps.trivy.outcome == 'success'
         with:
           sarif_file: 'trivy-results.sarif'
 
