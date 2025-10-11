@@ -15,9 +15,9 @@ import {
   MINMO_CONSTANTS,
   NOTIFICATION_CONSTANTS,
   LOGGING_CONSTANTS
-} from './constants/app.constants';
+} from '../constants/app.constants';
 
-export interface DatabaseConfig {
+export interface AppDatabaseConfig {
   url: string;
   maxConnections: number;
   minConnections: number;
@@ -100,7 +100,7 @@ export class AppConfigService {
   /**
    * Get database configuration
    */
-  getDatabaseConfig(): DatabaseConfig {
+  getDatabaseConfig(): AppDatabaseConfig {
     return {
       url: this.configService.get<string>('DATABASE_URL', ENVIRONMENT_CONSTANTS.DEFAULTS.DATABASE_URL),
       maxConnections: DATABASE_CONSTANTS.MAX_CONNECTIONS,
@@ -249,7 +249,7 @@ export class AppConfigService {
       throw new Error(`Required environment variable ${key} is not set or has default value`);
     }
     
-    return value;
+    return value as string;
   }
 
   /**

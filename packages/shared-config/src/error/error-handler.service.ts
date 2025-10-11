@@ -3,8 +3,8 @@
  * Provides consistent error handling across all services
  */
 
-import { Injectable, Logger, HttpException, HttpStatus } from '@nestjs/common';
-import { ERROR_CODES, HTTP_STATUS } from './constants/app.constants';
+import { Injectable, Logger, HttpException } from '@nestjs/common';
+import { ERROR_CODES, HTTP_STATUS } from '../constants/app.constants';
 
 export interface ErrorDetails {
   code: string;

@@ -10,7 +10,7 @@ import {
   SERVICE_PORTS, 
   ERROR_CODES,
   HTTP_STATUS 
-} from './constants/app.constants';
+} from '../constants/app.constants';
 
 export interface HealthCheckResult {
   service: string;

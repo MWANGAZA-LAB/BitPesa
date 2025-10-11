@@ -4,8 +4,8 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
-import { ErrorHandlerService, AppError } from './error-handler.service';
-import { TRANSACTION_CONSTANTS } from './constants/app.constants';
+import { ErrorHandlerService, AppError } from '../error/error-handler.service';
+import { TRANSACTION_CONSTANTS } from '../constants/app.constants';
 
 export interface RetryOptions {
   maxAttempts?: number;

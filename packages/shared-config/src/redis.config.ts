@@ -14,7 +14,6 @@ const redisConfigSchema = z.object({
   maxRetriesPerRequest: z.number().int().min(1).default(3),
   retryDelayOnFailover: z.number().int().min(100).default(100),
   enableReadyCheck: z.boolean().default(true),
-  maxRetriesPerRequest: z.number().int().min(1).default(3),
   lazyConnect: z.boolean().default(true),
 });
 
