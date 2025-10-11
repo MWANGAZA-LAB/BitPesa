@@ -21,12 +21,12 @@ export class CircuitBreakerService {
   private readonly breakers = new Map<string, CircuitBreakerState>();
   private readonly config: CircuitBreakerConfig;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(private readonly _configService: ConfigService) {
     this.config = {
-      failureThreshold: configService.get<number>('CIRCUIT_BREAKER_FAILURE_THRESHOLD', 5),
-      recoveryTimeout: configService.get<number>('CIRCUIT_BREAKER_RECOVERY_TIMEOUT', 30000),
-      monitoringPeriod: configService.get<number>('CIRCUIT_BREAKER_MONITORING_PERIOD', 60000),
-      expectedThroughput: configService.get<number>('CIRCUIT_BREAKER_EXPECTED_THROUGHPUT', 100),
+      failureThreshold: _configService.get<number>('CIRCUIT_BREAKER_FAILURE_THRESHOLD', 5),
+      recoveryTimeout: _configService.get<number>('CIRCUIT_BREAKER_RECOVERY_TIMEOUT', 30000),
+      monitoringPeriod: _configService.get<number>('CIRCUIT_BREAKER_MONITORING_PERIOD', 60000),
+      expectedThroughput: _configService.get<number>('CIRCUIT_BREAKER_EXPECTED_THROUGHPUT', 100),
     };
   }
 
@@ -123,7 +123,7 @@ export class CircuitBreakerService {
 
     this.logger.warn(`Circuit breaker failure for ${serviceName}`, {
       failureCount: breaker.failureCount,
-      error: error.message,
+      error: error instanceof Error ? error.message : String(error),
     });
 
     // Check if threshold is reached
@@ -183,7 +183,7 @@ export class RetryService {
         const delay = Math.min(baseDelay * Math.pow(2, attempt - 1), maxDelay);
         
         this.logger.warn(`Retry attempt ${attempt}/${maxAttempts} failed, retrying in ${delay}ms`, {
-          error: error.message,
+          error: error instanceof Error ? error.message : String(error),
           attempt,
           maxAttempts,
         });

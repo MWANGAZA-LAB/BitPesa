@@ -6,7 +6,7 @@ export interface PrismaConfig {
   connectionLimit: number;
   connectionTimeout: number;
   queryTimeout: number;
-  logLevel: Prisma.LogLevel[];
+  logLevel: string[];
   enableMetrics: boolean;
 }
 
@@ -20,7 +20,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       connectionLimit: configService.get<number>('DATABASE_CONNECTION_LIMIT', 20),
       connectionTimeout: configService.get<number>('DATABASE_CONNECTION_TIMEOUT', 10000),
       queryTimeout: configService.get<number>('DATABASE_QUERY_TIMEOUT', 30000),
-      logLevel: configService.get<Prisma.LogLevel[]>('DATABASE_LOG_LEVEL', ['error', 'warn']),
+      logLevel: configService.get<string[]>('DATABASE_LOG_LEVEL', ['error', 'warn']),
       enableMetrics: configService.get<boolean>('DATABASE_ENABLE_METRICS', true),
     };
 
@@ -78,7 +78,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   }
 
   private enableQueryMetrics(): void {
-    this.$on('query', (e) => {
+    this.$on('query', (e: any) => {
       if (e.duration > 1000) { // Log slow queries (>1s)
         this.logger.warn(`Slow query detected: ${e.duration}ms`, {
           query: e.query,

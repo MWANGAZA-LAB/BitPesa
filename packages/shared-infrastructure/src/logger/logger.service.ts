@@ -12,9 +12,9 @@ export class LoggerService implements NestLoggerService {
   private context?: string;
   private winston: winston.Logger;
 
-  constructor(private readonly config: LoggerConfig) {
+  constructor(private readonly _config: LoggerConfig) {
     this.winston = winston.createLogger({
-      level: config.logLevel || process.env.LOG_LEVEL || 'info',
+      level: _config.logLevel || process.env.LOG_LEVEL || 'info',
       format: winston.format.combine(
         winston.format.timestamp(),
         winston.format.errors({ stack: true }),
