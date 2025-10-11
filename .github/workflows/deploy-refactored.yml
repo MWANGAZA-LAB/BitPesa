@@ -44,6 +44,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
       - name: Run type checking
         run: pnpm type-check
 
@@ -89,14 +94,46 @@ jobs:
       - name: Deploy to staging
         run: |
           echo "Deploying to staging environment..."
-          # Add your staging deployment commands here
-          # Example: kubectl apply -f k8s/staging/
+          
+          # Apply Kubernetes configurations
+          kubectl apply -f infrastructure/kubernetes/namespace.yaml
+          kubectl apply -f infrastructure/kubernetes/secrets.yaml
+          kubectl apply -f infrastructure/kubernetes/configmaps/environment-configs.yaml
+          kubectl apply -f infrastructure/kubernetes/deployments/bitpesa-deployments.yaml
+          kubectl apply -f infrastructure/kubernetes/services/bitpesa-services.yaml
+          kubectl apply -f infrastructure/kubernetes/ingress/ingress-configs.yaml
+          
+          # Update ConfigMap for staging
+          kubectl patch configmap bitpesa-config-staging -n bitpesa --patch '{"data":{"NODE_ENV":"staging"}}'
+          
+          # Wait for deployments to be ready
+          kubectl rollout status deployment/api-gateway -n bitpesa --timeout=300s
+          kubectl rollout status deployment/mpesa-service -n bitpesa --timeout=300s
+          kubectl rollout status deployment/transaction-service -n bitpesa --timeout=300s
 
       - name: Run health checks
         run: |
-          echo "Running health checks..."
-          # Add your health check commands here
-          # Example: curl -f https://staging-api.bitpesa.com/health
+          echo "Running comprehensive health checks..."
+          
+          # Wait for all services to be ready
+          kubectl wait --for=condition=ready pod -l app=api-gateway -n bitpesa --timeout=300s
+          kubectl wait --for=condition=ready pod -l app=mpesa-service -n bitpesa --timeout=300s
+          kubectl wait --for=condition=ready pod -l app=transaction-service -n bitpesa --timeout=300s
+          kubectl wait --for=condition=ready pod -l app=monitoring-service -n bitpesa --timeout=300s
+          
+          # Test health endpoints
+          kubectl exec deployment/api-gateway -n bitpesa -- curl -f http://localhost:3000/health
+          kubectl exec deployment/mpesa-service -n bitpesa -- curl -f http://localhost:3002/health
+          kubectl exec deployment/transaction-service -n bitpesa -- curl -f http://localhost:3003/health
+          kubectl exec deployment/monitoring-service -n bitpesa -- curl -f http://localhost:3004/health
+          
+          # Test readiness endpoints
+          kubectl exec deployment/api-gateway -n bitpesa -- curl -f http://localhost:3000/health/ready
+          kubectl exec deployment/mpesa-service -n bitpesa -- curl -f http://localhost:3002/health/ready
+          kubectl exec deployment/transaction-service -n bitpesa -- curl -f http://localhost:3003/health/ready
+          kubectl exec deployment/monitoring-service -n bitpesa -- curl -f http://localhost:3004/health/ready
+          
+          echo "All health checks passed successfully!"
 
   # Deploy to production
   deploy-production:
@@ -121,6 +158,11 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
 
       - name: Run type checking
         run: pnpm type-check
@@ -167,14 +209,34 @@ jobs:
       - name: Run database migrations
         run: |
           echo "Running database migrations..."
-          # Add your migration commands here
-          # Example: kubectl exec -it deployment/api-gateway -- pnpm prisma:migrate
+          
+          # Run Prisma migrations for each service
+          kubectl exec deployment/mpesa-service -n bitpesa -- pnpm prisma:migrate deploy
+          kubectl exec deployment/transaction-service -n bitpesa -- pnpm prisma:migrate deploy
+          kubectl exec deployment/monitoring-service -n bitpesa -- pnpm prisma:migrate deploy
+          kubectl exec deployment/receipt-service -n bitpesa -- pnpm prisma:migrate deploy
+          
+          echo "Database migrations completed successfully"
 
       - name: Deploy to production
         run: |
           echo "Deploying to production environment..."
-          # Add your production deployment commands here
-          # Example: kubectl apply -f k8s/production/
+          
+          # Apply Kubernetes configurations
+          kubectl apply -f infrastructure/kubernetes/namespace.yaml
+          kubectl apply -f infrastructure/kubernetes/secrets.yaml
+          kubectl apply -f infrastructure/kubernetes/configmaps/environment-configs.yaml
+          kubectl apply -f infrastructure/kubernetes/deployments/bitpesa-deployments.yaml
+          kubectl apply -f infrastructure/kubernetes/services/bitpesa-services.yaml
+          kubectl apply -f infrastructure/kubernetes/ingress/ingress-configs.yaml
+          
+          # Update ConfigMap for production
+          kubectl patch configmap bitpesa-config-production -n bitpesa --patch '{"data":{"NODE_ENV":"production"}}'
+          
+          # Wait for deployments to be ready
+          kubectl rollout status deployment/api-gateway -n bitpesa --timeout=300s
+          kubectl rollout status deployment/mpesa-service -n bitpesa --timeout=300s
+          kubectl rollout status deployment/transaction-service -n bitpesa --timeout=300s
 
       - name: Run health checks
         run: |
