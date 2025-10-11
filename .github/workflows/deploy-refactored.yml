@@ -182,14 +182,14 @@ jobs:
           # Add your health check commands here
           # Example: curl -f https://api.bitpesa.com/health
 
-      - name: Notify deployment success
-        uses: 8398a7/action-slack@v3
-        with:
-          status: success
-          channel: '#deployments'
-          text: 'BitPesa Bridge deployed to production successfully! 🚀'
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      # - name: Notify deployment success
+      #   uses: 8398a7/action-slack@v3
+      #   with:
+      #     status: success
+      #     channel: '#deployments'
+      #     text: 'BitPesa Bridge deployed to production successfully! 🚀'
+      #   env:
+      #     SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 
   # Rollback on failure
   rollback:
@@ -204,11 +204,11 @@ jobs:
           # Add your rollback commands here
           # Example: kubectl rollout undo deployment/api-gateway
 
-      - name: Notify rollback
-        uses: 8398a7/action-slack@v3
-        with:
-          status: failure
-          channel: '#deployments'
-          text: 'BitPesa Bridge deployment failed and was rolled back! ⚠️'
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      # - name: Notify rollback
+      #   uses: 8398a7/action-slack@v3
+      #   with:
+      #     status: failure
+      #     channel: '#deployments'
+      #     text: 'BitPesa Bridge deployment failed and was rolled back! ⚠️'
+      #   env:
+      #     SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
