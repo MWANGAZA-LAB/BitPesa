@@ -5,7 +5,7 @@ import { ERROR_CODES, HTTP_STATUS } from '../constants/app.constants';
 
 describe('ErrorHandlerService', () => {
   let service: ErrorHandlerService;
-  let logger: Logger;
+  let _logger: Logger;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -13,7 +13,7 @@ describe('ErrorHandlerService', () => {
     }).compile();
 
     service = module.get<ErrorHandlerService>(ErrorHandlerService);
-    logger = module.get<Logger>(Logger);
+    _logger = module.get<Logger>(Logger);
   });
 
   afterEach(() => {

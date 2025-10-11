@@ -66,7 +66,7 @@ export class RetryService {
       } catch (error) {
         lastError = error as Error;
         
-        this.logger.warn(`Attempt ${attempt}/${maxAttempts} failed: ${error.message}`);
+        this.logger.warn(`Attempt ${attempt}/${maxAttempts} failed: ${error instanceof Error ? error.message : String(error)}`);
         
         // Check if we should retry
         if (attempt === maxAttempts || !retryCondition(lastError)) {
@@ -93,7 +93,7 @@ export class RetryService {
     
     return {
       success: false,
-      error: lastError!,
+      error: lastError || new Error('Unknown error'),
       attempts: maxAttempts,
       totalDelayMs,
     };
@@ -130,7 +130,7 @@ export class RetryService {
     const {
       failureThreshold = 5,
       recoveryTimeoutMs = 60000,
-      monitoringPeriodMs = 300000, // 5 minutes
+      monitoringPeriodMs: _monitoringPeriodMs = 300000, // 5 minutes
     } = options;
 
     // Simple in-memory circuit breaker state
@@ -202,7 +202,7 @@ export class RetryService {
   ): Promise<T> {
     return Promise.race([
       operation(),
-      this.createTimeoutPromise(timeoutMs),
+      this.createTimeoutPromise<T>(timeoutMs),
     ]);
   }
 
@@ -263,10 +263,6 @@ export class RetryService {
    * In production, this should be stored in Redis or similar
    */
   private getCircuitBreakerState(key: string) {
-    if (!this.circuitBreakerStates) {
-      this.circuitBreakerStates = new Map();
-    }
-    
     if (!this.circuitBreakerStates.has(key)) {
       this.circuitBreakerStates.set(key, {
         isOpen: false,
@@ -276,7 +272,7 @@ export class RetryService {
       });
     }
     
-    return this.circuitBreakerStates.get(key);
+    return this.circuitBreakerStates.get(key)!;
   }
 
   private circuitBreakerStates: Map<string, {
@@ -284,7 +280,7 @@ export class RetryService {
     failureCount: number;
     lastFailureTime: number;
     lastSuccessTime: number;
-  }>;
+  }> = new Map();
 
   /**
    * Get circuit breaker status

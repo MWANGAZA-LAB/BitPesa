@@ -24,6 +24,7 @@
     "noEmit": true,
     "jsx": "preserve",
     "incremental": true,
+    "composite": true,
     "baseUrl": ".",
     "paths": {
       "@bitpesa/shared-types": ["./packages/shared-types/src"],
@@ -41,5 +42,11 @@
     "dist",
     ".next",
     "coverage"
+  ],
+  "references": [
+    { "path": "./packages/shared-types" },
+    { "path": "./packages/shared-utils" },
+    { "path": "./packages/shared-config" },
+    { "path": "./packages/shared-infrastructure" }
   ]
 }

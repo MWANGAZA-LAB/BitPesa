@@ -1,16 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { AppConfigService } from '../config/app-config.service';
-import { 
-  TRANSACTION_CONSTANTS, 
-  SERVICE_PORTS, 
-  ERROR_CODES,
-  HTTP_STATUS 
-} from '../constants/app.constants';
 
 describe('AppConfigService', () => {
   let service: AppConfigService;
-  let configService: ConfigService;
+  let _configService: ConfigService;
 
   const mockConfigService = {
     get: jest.fn(),
@@ -28,7 +22,7 @@ describe('AppConfigService', () => {
     }).compile();
 
     service = module.get<AppConfigService>(AppConfigService);
-    configService = module.get<ConfigService>(ConfigService);
+    _configService = module.get<ConfigService>(ConfigService);
   });
 
   afterEach(() => {

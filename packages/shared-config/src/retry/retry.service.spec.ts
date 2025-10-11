@@ -1,8 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { Logger } from '@nestjs/common';
 import { RetryService } from '../retry/retry.service';
 import { ErrorHandlerService } from '../error/error-handler.service';
-import { TRANSACTION_CONSTANTS } from '../constants/app.constants';
 
 describe('RetryService', () => {
   let service: RetryService;
@@ -157,7 +155,7 @@ describe('RetryService', () => {
       });
 
       expect(result.success).toBe(false);
-      expect(result.error.message).toContain('Circuit breaker is open');
+      expect(result.error?.message).toContain('Circuit breaker is open');
     });
 
     it('should attempt recovery after timeout', async () => {
@@ -219,7 +217,7 @@ describe('RetryService', () => {
 
       expect(result.success).toBe(false);
       expect(result.attempts).toBe(2);
-      expect(result.error.message).toContain('timed out');
+      expect(result.error?.message).toContain('timed out');
     });
   });
 

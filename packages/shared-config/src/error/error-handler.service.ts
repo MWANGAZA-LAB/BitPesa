@@ -72,7 +72,7 @@ export class ErrorHandlerService {
   /**
    * Create standardized error details
    */
-  private createErrorDetails(error: Error, context?: string): ErrorDetails {
+  private createErrorDetails(error: Error, _context?: string): ErrorDetails {
     if (error instanceof AppError) {
       return {
         code: error.code,

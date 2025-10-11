@@ -70,7 +70,7 @@ export class MonitoringService {
   private readonly alertRules: AlertRule[] = [];
   private readonly alertHistory: Array<{ rule: AlertRule; timestamp: string; metrics: MetricsData }> = [];
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(private readonly _configService: ConfigService) {
     this.initializeAlertRules();
     this.startMetricsCollection();
   }
