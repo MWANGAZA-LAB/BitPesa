@@ -1,0 +1,161 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Swap Status Enum
+enum SwapStatus {
+  PENDING
+  DEPOSIT_PENDING
+  DEPOSIT_RECEIVED
+  PROCESSING
+  COMPLETED
+  FAILED
+  EXPIRED
+  CANCELLED
+}
+
+// Swap Direction Enum
+enum SwapDirection {
+  BTC_TO_KES
+  KES_TO_BTC
+}
+
+// Core Swap Model
+model Swap {
+  id                    String              @id @default(cuid())
+  minmoSwapId           String              @unique
+  transactionId         String?             // Link to main transaction
+  direction             SwapDirection
+  fromCurrency          String              // BTC, KES
+  toCurrency            String              // BTC, KES
+  fromAmount            Decimal             @db.Decimal(20, 8)
+  toAmount              Decimal             @db.Decimal(20, 8)
+  exchangeRate          Decimal             @db.Decimal(20, 8)
+  minmoFee              Decimal             @db.Decimal(20, 8)
+  netAmount             Decimal             @db.Decimal(20, 8)
+  
+  // Bitcoin specific fields
+  btcAddress            String?
+  btcTransactionHash    String?
+  btcConfirmations      Int?
+  
+  // KES specific fields
+  kesAccountNumber      String?
+  kesTransactionId      String?
+  
+  // Status and timing
+  status                SwapStatus           @default(PENDING)
+  expiresAt             DateTime
+  completedAt           DateTime?
+  
+  // Metadata
+  metadata              Json?
+  failureReason         String?
+  
+  // Audit fields
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  
+  // Relations
+  webhooks              SwapWebhook[]
+  rateHistory           ExchangeRate[]
+  
+  @@map("swaps")
+}
+
+// Exchange Rate Model
+model ExchangeRate {
+  id                    String              @id @default(cuid())
+  swapId                String?
+  fromCurrency          String              // BTC
+  toCurrency            String              // KES
+  rate                  Decimal              @db.Decimal(20, 8)
+  timestamp             DateTime             @default(now())
+  
+  // Relations
+  swap                  Swap?                @relation(fields: [swapId], references: [id], onDelete: SetNull)
+  
+  @@map("exchange_rates")
+}
+
+// Swap Webhook Model
+model SwapWebhook {
+  id                    String              @id @default(cuid())
+  swapId                String
+  webhookType           String              // deposit_received, swap_completed, etc.
+  webhookData           Json
+  signature             String
+  processed             Boolean              @default(false)
+  processedAt           DateTime?
+  
+  // Audit fields
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  
+  // Relations
+  swap                  Swap                @relation(fields: [swapId], references: [id], onDelete: Cascade)
+  
+  @@map("swap_webhooks")
+}
+
+// MinMo Configuration Model
+model MinmoConfig {
+  id                    String              @id @default(cuid())
+  environment           String              @default("sandbox") // sandbox, production
+  apiUrl                String
+  apiKey                String
+  webhookSecret         String
+  webhookUrl            String?
+  isActive              Boolean             @default(true)
+  
+  // Fee configuration
+  minSwapAmount         Decimal             @db.Decimal(20, 8)
+  maxSwapAmount         Decimal             @db.Decimal(20, 8)
+  feePercentage         Decimal             @db.Decimal(5, 4)   // 0.025 = 2.5%
+  
+  // Audit fields
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  
+  @@map("minmo_configs")
+}
+
+// Rate Limiting Model
+model MinmoRateLimit {
+  id                    String              @id @default(cuid())
+  identifier            String              // IP address or user ID
+  requestType           String              // swap_creation, rate_fetch, etc.
+  requestCount          Int                 @default(1)
+  windowStart           DateTime
+  windowEnd             DateTime
+  
+  // Audit fields
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  
+  @@unique([identifier, requestType, windowStart])
+  @@map("minmo_rate_limits")
+}
+
+// Bitcoin Address Model (for tracking generated addresses)
+model BitcoinAddress {
+  id                    String              @id @default(cuid())
+  address               String              @unique
+  swapId                String?
+  isUsed                Boolean             @default(false)
+  usedAt                DateTime?
+  
+  // Audit fields
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  
+  @@map("bitcoin_addresses")
+}

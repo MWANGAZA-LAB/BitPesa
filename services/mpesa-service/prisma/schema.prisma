@@ -1,0 +1,179 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// M-Pesa Transaction Types
+enum MpesaTransactionType {
+  STK_PUSH
+  B2C
+  B2B
+  C2B
+}
+
+enum MpesaStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+  TIMEOUT
+}
+
+// Core M-Pesa Transaction Model
+model MpesaTransaction {
+  id                    String              @id @default(cuid())
+  transactionId         String              @unique
+  merchantRequestId     String?             @unique
+  checkoutRequestId     String?             @unique
+  mpesaReceiptNumber    String?             @unique
+  transactionType       MpesaTransactionType
+  phoneNumber           String
+  amount                Decimal             @db.Decimal(10, 2)
+  accountReference      String?
+  transactionDesc       String?
+  occasion              String?
+  status                MpesaStatus         @default(PENDING)
+  resultCode            Int?
+  resultDesc            String?
+  callbackData          Json?
+  
+  // Audit fields
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  
+  // Relations
+  stkPushRequests       StkPushRequest[]
+  b2cRequests          B2CRequest[]
+  c2bRequests          C2BRequest[]
+  callbacks            MpesaCallback[]
+  
+  @@map("mpesa_transactions")
+}
+
+// STK Push Request Model
+model StkPushRequest {
+  id                    String              @id @default(cuid())
+  mpesaTransactionId    String
+  phoneNumber           String
+  amount                Decimal             @db.Decimal(10, 2)
+  accountReference      String?
+  transactionDesc      String?
+  businessShortCode    String
+  passkey              String?
+  callbackUrl           String?
+  timeoutUrl            String?
+  status                MpesaStatus         @default(PENDING)
+  
+  // Audit fields
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  
+  // Relations
+  mpesaTransaction     MpesaTransaction    @relation(fields: [mpesaTransactionId], references: [id], onDelete: Cascade)
+  
+  @@map("stk_push_requests")
+}
+
+// B2C Request Model
+model B2CRequest {
+  id                    String              @id @default(cuid())
+  mpesaTransactionId    String
+  phoneNumber           String
+  amount                Decimal             @db.Decimal(10, 2)
+  commandId             String              @default("BusinessPayment")
+  remarks               String?
+  occasion              String?
+  status                MpesaStatus         @default(PENDING)
+  
+  // Audit fields
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  
+  // Relations
+  mpesaTransaction     MpesaTransaction    @relation(fields: [mpesaTransactionId], references: [id], onDelete: Cascade)
+  
+  @@map("b2c_requests")
+}
+
+// C2B Request Model
+model C2BRequest {
+  id                    String              @id @default(cuid())
+  mpesaTransactionId    String
+  phoneNumber           String
+  amount                Decimal             @db.Decimal(10, 2)
+  billRefNumber         String?
+  commandId             String              @default("CustomerPayBillOnline")
+  status                MpesaStatus         @default(PENDING)
+  
+  // Audit fields
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  
+  // Relations
+  mpesaTransaction     MpesaTransaction    @relation(fields: [mpesaTransactionId], references: [id], onDelete: Cascade)
+  
+  @@map("c2b_requests")
+}
+
+// M-Pesa Callback Model
+model MpesaCallback {
+  id                    String              @id @default(cuid())
+  mpesaTransactionId    String
+  callbackType          String              // STK_PUSH, B2C, C2B, etc.
+  callbackData          Json
+  processed             Boolean             @default(false)
+  processedAt           DateTime?
+  
+  // Audit fields
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  
+  // Relations
+  mpesaTransaction     MpesaTransaction    @relation(fields: [mpesaTransactionId], references: [id], onDelete: Cascade)
+  
+  @@map("mpesa_callbacks")
+}
+
+// M-Pesa Configuration Model
+model MpesaConfig {
+  id                    String              @id @default(cuid())
+  environment           String              @default("sandbox") // sandbox, production
+  consumerKey           String
+  consumerSecret        String
+  businessShortCode     String
+  passkey               String
+  callbackUrl           String?
+  timeoutUrl            String?
+  isActive              Boolean             @default(true)
+  
+  // Audit fields
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  
+  @@map("mpesa_configs")
+}
+
+// Rate Limiting Model
+model MpesaRateLimit {
+  id                    String              @id @default(cuid())
+  phoneNumber           String
+  requestType           String              // STK_PUSH, B2C, etc.
+  requestCount          Int                 @default(1)
+  windowStart           DateTime
+  windowEnd             DateTime
+  
+  // Audit fields
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  
+  @@unique([phoneNumber, requestType, windowStart])
+  @@map("mpesa_rate_limits")
+}
